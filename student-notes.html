@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lecture Notes – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireStudent();
+  if (!session) return;
+
+  renderLayout({ role: 'student', activePage: 'notes' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>📚 Lecture Notes</h1>
+        <p>Download and access your course materials uploaded by your instructor.</p>
+      </div>
+
+      <!-- Filter & Search Bar -->
+      <div class="card mb-20">
+        <div class="card-body" style="padding:14px 20px;">
+          <div class="flex gap-12 items-center flex-wrap">
+            <div class="input-wrap" style="flex:1;min-width:200px;">
+              <span class="input-prefix">🔍</span>
+              <input type="text" id="searchInput" class="form-control"
+                     placeholder="Search notes..." oninput="filterNotes()" />
+            </div>
+            <select class="form-control" id="courseFilter" style="max-width:280px;" onchange="filterNotes()">
+              <option value="">All Courses</option>
+            </select>
+            <div class="view-toggle">
+              <button class="vt-btn active" id="gridViewBtn" onclick="setView('grid',this)" title="Grid View">⊞</button>
+              <button class="vt-btn" id="listViewBtn" onclick="setView('list',this)" title="List View">☰</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="notes-stats-row mb-20" id="notesStats"></div>
+
+      <!-- Notes Grid/List -->
+      <div id="notesContainer">
+        <div class="notes-grid" id="notesGrid">
+          ${[1,2,3,4,5,6].map(()=>`
+            <div class="note-card-skeleton">
+              <div class="skeleton" style="height:48px;border-radius:8px;margin-bottom:12px;"></div>
+              <div class="skeleton skel-line"></div>
+              <div class="skeleton skel-line" style="width:70%;"></div>
+              <div class="skeleton" style="height:32px;margin-top:14px;border-radius:6px;"></div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectNotesStyles();
+
+  let allNotes   = [];
+  let allCourses = [];
+  let viewMode   = 'grid';
+
+  // Load data in parallel
+  const [notesRes, coursesRes] = await Promise.all([
+    API.getLectureNotes(),
+    API.getCourses()
+  ]);
+
+  // Populate course filter
+  if (coursesRes.success && coursesRes.courses) {
+    allCourses = coursesRes.courses;
+    const sel  = document.getElementById('courseFilter');
+    allCourses.forEach(c => {
+      const opt       = document.createElement('option');
+      opt.value       = c.courseId;
+      opt.textContent = c.courseName;
+      sel.appendChild(opt);
+    });
+  }
+
+  if (!notesRes.success || !notesRes.notes || !notesRes.notes.length) {
+    document.getElementById('notesGrid').innerHTML = `
+      <div class="empty-state" style="grid-column:1/-1;">
+        <div class="empty-icon">📭</div>
+        <h3>No lecture notes yet</h3>
+        <p>Your instructor has not uploaded any notes yet. Check back later.</p>
+      </div>`;
+    return;
+  }
+
+  allNotes = notesRes.notes;
+  renderStats();
+  renderNotes(allNotes);
+
+  // ── Stats Row ────────────────────────────────────────────────
+  function renderStats() {
+    const byCourse = {};
+    allNotes.forEach(n => {
+      const key = n.courseId || 'other';
+      byCourse[key] = (byCourse[key] || 0) + 1;
+    });
+    const courseCount = Object.keys(byCourse).length;
+
+    document.getElementById('notesStats').innerHTML = `
+      <div class="ns-stat"><span class="ns-val">${allNotes.length}</span><span class="ns-lbl">Total Notes</span></div>
+      <div class="ns-stat"><span class="ns-val">${courseCount}</span><span class="ns-lbl">Courses</span></div>
+      <div class="ns-stat"><span class="ns-val">${allCourses.length}</span><span class="ns-lbl">Enrolled</span></div>
+    `;
+  }
+
+  // ── Filter ───────────────────────────────────────────────────
+  window.filterNotes = function() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const course = document.getElementById('courseFilter').value;
+    const filtered = allNotes.filter(n => {
+      const matchCourse = !course || n.courseId === course;
+      const matchSearch = !search ||
+        (n.Topic_Title  || n.topicTitle  || '').toLowerCase().includes(search) ||
+        (n.Course_Name  || n.courseName  || '').toLowerCase().includes(search);
+      return matchCourse && matchSearch;
+    });
+    renderNotes(filtered);
+  };
+
+  // ── Set View Mode ────────────────────────────────────────────
+  window.setView = function(mode, btn) {
+    viewMode = mode;
+    document.querySelectorAll('.vt-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const grid = document.getElementById('notesGrid');
+    grid.className = mode === 'grid' ? 'notes-grid' : 'notes-list';
+    filterNotes();
+  };
+
+  // ── Render Notes ─────────────────────────────────────────────
+  function renderNotes(notes) {
+    const grid = document.getElementById('notesGrid');
+    if (!notes.length) {
+      grid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1;">
+          <div class="empty-icon">🔍</div>
+          <h3>No notes found</h3>
+          <p>Try a different search term or course filter.</p>
+        </div>`;
+      return;
+    }
+
+    if (viewMode === 'grid') {
+      grid.innerHTML = notes.map(n => noteGridCard(n)).join('');
+    } else {
+      grid.innerHTML = notes.map(n => noteListRow(n)).join('');
+    }
+  }
+
+  // ── Grid Card ────────────────────────────────────────────────
+  function noteGridCard(n) {
+    const title      = n.Topic_Title  || n.topicTitle  || 'Untitled';
+    const courseName = n.Course_Name  || n.courseName  || '';
+    const url        = n.Resource_URL || n.resourceUrl || '#';
+    const uploaded   = n.UploadedAt  || n.uploadedAt  || '';
+    const ext        = getFileExt(url);
+    const { icon, color, label } = getFileType(ext);
+
+    return `
+      <div class="note-card" onclick="openNote('${url.replace(/'/g,"\\'")}')">
+        <div class="nc-file-icon" style="background:${color}22;color:${color};">
+          ${icon}
+        </div>
+        <div class="nc-type-badge" style="background:${color}22;color:${color};">${label}</div>
+        <div class="nc-title">${title}</div>
+        <div class="nc-course">${courseName}</div>
+        ${uploaded ? `<div class="nc-date">📅 ${DateUtil.format(uploaded)}</div>` : ''}
+        <a href="${url}" target="_blank" class="btn btn-primary btn-sm btn-full nc-btn"
+           onclick="event.stopPropagation()">
+          ⬇ Download / Open
+        </a>
+      </div>`;
+  }
+
+  // ── List Row ─────────────────────────────────────────────────
+  function noteListRow(n) {
+    const title      = n.Topic_Title  || n.topicTitle  || 'Untitled';
+    const courseName = n.Course_Name  || n.courseName  || '';
+    const url        = n.Resource_URL || n.resourceUrl || '#';
+    const uploaded   = n.UploadedAt  || n.uploadedAt  || '';
+    const ext        = getFileExt(url);
+    const { icon, color, label } = getFileType(ext);
+
+    return `
+      <div class="note-list-row">
+        <div class="nlr-icon" style="background:${color}22;color:${color};">${icon}</div>
+        <div class="nlr-info">
+          <div class="nlr-title">${title}</div>
+          <div class="nlr-meta">
+            <span class="badge" style="background:${color}22;color:${color};font-size:.68rem;">${label}</span>
+            <span class="text-xs text-muted">${courseName}</span>
+            ${uploaded ? `<span class="text-xs text-muted">• ${DateUtil.format(uploaded)}</span>` : ''}
+          </div>
+        </div>
+        <div class="nlr-actions">
+          <a href="${url}" target="_blank" class="btn btn-primary btn-sm">⬇ Open</a>
+        </div>
+      </div>`;
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────
+  window.openNote = function(url) {
+    if (url && url !== '#') window.open(url, '_blank');
+  };
+
+  function getFileExt(url) {
+    if (!url) return '';
+    const match = url.toLowerCase().match(/\.([a-z0-9]+)(\?|$)/);
+    return match ? match[1] : '';
+  }
+
+  function getFileType(ext) {
+    const types = {
+      pdf:  { icon: '📄', color: '#ef4444', label: 'PDF' },
+      doc:  { icon: '📝', color: '#3b82f6', label: 'Word' },
+      docx: { icon: '📝', color: '#3b82f6', label: 'Word' },
+      ppt:  { icon: '📊', color: '#f97316', label: 'PPT' },
+      pptx: { icon: '📊', color: '#f97316', label: 'PPT' },
+      xls:  { icon: '📈', color: '#10b981', label: 'Excel' },
+      xlsx: { icon: '📈', color: '#10b981', label: 'Excel' },
+      mp4:  { icon: '🎥', color: '#8b5cf6', label: 'Video' },
+      mp3:  { icon: '🎵', color: '#ec4899', label: 'Audio' },
+      jpg:  { icon: '🖼', color: '#06b6d4', label: 'Image' },
+      png:  { icon: '🖼', color: '#06b6d4', label: 'Image' },
+      zip:  { icon: '🗜', color: '#64748b', label: 'ZIP' },
+    };
+    return types[ext] || { icon: '📁', color: '#64748b', label: 'File' };
+  }
+
+})();
+
+function injectNotesStyles() {
+  if (document.getElementById('notes-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'notes-styles';
+  s.textContent = `
+    /* Stats Row */
+    .notes-stats-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .ns-stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 8px 16px;
+    }
+    .ns-val  { font-weight: 800; font-size: 1.1rem; color: var(--text); }
+    .ns-lbl  { font-size: .75rem; color: var(--text-muted); }
+
+    /* View Toggle */
+    .view-toggle {
+      display: flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      overflow: hidden;
+    }
+    .vt-btn {
+      padding: 7px 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      color: var(--text-muted);
+      transition: var(--trans);
+    }
+    .vt-btn.active { background: var(--bg-card); color: var(--primary); }
+
+    /* Notes Grid */
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    /* Notes List */
+    .notes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Note Card (Grid) */
+    .note-card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 20px;
+      cursor: pointer;
+      transition: var(--trans);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    .note-card:hover {
+      border-color: var(--primary-light);
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+    }
+    .nc-file-icon {
+      width: 52px; height: 52px;
+      border-radius: var(--r-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.6rem;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+    .nc-type-badge {
+      display: inline-block;
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: var(--r-full);
+      width: fit-content;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .nc-title  { font-weight: 700; font-size: .9rem; color: var(--text); line-height: 1.4; margin-top: 4px; }
+    .nc-course { font-size: .75rem; color: var(--text-muted); }
+    .nc-date   { font-size: .72rem; color: var(--text-light); }
+    .nc-btn    { margin-top: auto; }
+
+    /* Skeleton */
+    .note-card-skeleton {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 20px;
+    }
+
+    /* Note List Row */
+    .note-list-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 14px 18px;
+      transition: var(--trans);
+    }
+    .note-list-row:hover {
+      border-color: var(--primary-light);
+      box-shadow: var(--shadow-sm);
+    }
+    .nlr-icon {
+      width: 42px; height: 42px;
+      border-radius: var(--r-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .nlr-info    { flex: 1; overflow: hidden; }
+    .nlr-title   { font-weight: 700; font-size: .9rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nlr-meta    { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+    .nlr-actions { flex-shrink: 0; }
+
+    @media (max-width: 600px) {
+      .notes-grid { grid-template-columns: 1fr 1fr; }
+      .nlr-actions .btn { padding: 5px 10px; font-size: .75rem; }
+    }
+    @media (max-width: 400px) {
+      .notes-grid { grid-template-columns: 1fr; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Complaints – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireInstructor();
+  if (!session) return;
+
+  renderLayout({ role: 'instructor', activePage: 'complaints' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>📬 Student Complaints</h1>
+        <p>Review, respond and resolve student mark complaints.</p>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid mb-20" id="complaintStats">
+        ${skeletonGrid(4)}
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="card mb-20">
+        <div class="card-body" style="padding:12px 20px;">
+          <div class="flex gap-12 items-center flex-wrap">
+            <div class="input-wrap" style="flex:1;min-width:180px;">
+              <span class="input-prefix">🔍</span>
+              <input type="text" id="searchInput" class="form-control"
+                     placeholder="Search by ID or course..." oninput="filterComplaints()" />
+            </div>
+            <div class="flex gap-6 flex-wrap">
+              <button class="filter-btn active" data-status="all"   onclick="setStatusFilter('all',this)">All</button>
+              <button class="filter-btn" data-status="Pending"      onclick="setStatusFilter('Pending',this)">⏳ Pending</button>
+              <button class="filter-btn" data-status="Resolved"     onclick="setStatusFilter('Resolved',this)">✅ Resolved</button>
+              <button class="filter-btn" data-status="Rejected"     onclick="setStatusFilter('Rejected',this)">❌ Rejected</button>
+              <button class="filter-btn" data-status="Accepted"     onclick="setStatusFilter('Accepted',this)">👍 Accepted</button>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="loadComplaints()">🔄 Refresh</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Complaints List -->
+      <div id="complaintsContent">
+        ${[1,2,3].map(()=>`
+          <div class="card mb-12">
+            <div class="card-body">
+              <div class="skeleton skel-line" style="width:40%;margin-bottom:10px;"></div>
+              <div class="skeleton skel-line"></div>
+              <div class="skeleton skel-line" style="width:75%;"></div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- ══ RESOLVE MODAL ══ -->
+    <div class="modal-overlay" id="resolveModal">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-header">
+          <div>
+            <h3>📝 Respond to Complaint</h3>
+            <p class="text-sm text-muted" id="resolveStudentLabel"></p>
+          </div>
+          <button class="modal-close" onclick="closeModal('resolveModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <!-- Complaint detail -->
+          <div class="complaint-detail-box" id="complaintDetailBox"></div>
+
+          <!-- Update mark option -->
+          <div class="update-mark-section" id="updateMarkSection">
+            <div class="ums-toggle">
+              <label class="check-label">
+                <input type="checkbox" id="updateMarkCheck" onchange="toggleMarkUpdate()" />
+                <span>Also update the mark for this assessment</span>
+              </label>
+            </div>
+            <div class="ums-fields hidden" id="updateMarkFields">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label">New Score</label>
+                  <input type="number" id="newMarkScore" class="form-control" placeholder="Enter new score" min="0" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Max Score</label>
+                  <input type="number" id="newMarkMax" class="form-control" readonly />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Resolution</label>
+            <select class="form-control" id="resolveStatus">
+              <option value="Resolved">✅ Resolved — Mark corrected or acknowledged</option>
+              <option value="Rejected">❌ Rejected — Mark is correct, no change</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Response Message to Student</label>
+            <textarea class="form-control" id="resolveMsg" rows="4"
+              placeholder="Explain your decision clearly..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('resolveModal')">Cancel</button>
+          <button class="btn btn-primary" id="resolveBtn" onclick="doResolve()">
+            Submit Response
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectComplaintStyles();
+
+  let allComplaints  = [];
+  let activeStatus   = 'all';
+  let selectedComplaint = null;
+
+  await loadComplaints();
+
+  // ── Load ─────────────────────────────────────────────────────
+  window.loadComplaints = async function() {
+    const res = await API.getComplaints();
+    allComplaints = res.success ? [...(res.complaints || [])].reverse() : [];
+    renderStats();
+    filterComplaints();
+  };
+
+  // ── Stats ─────────────────────────────────────────────────────
+  function renderStats() {
+    const total    = allComplaints.length;
+    const pending  = allComplaints.filter(c => (c.Status||c.status) === 'Pending').length;
+    const resolved = allComplaints.filter(c => (c.Status||c.status) === 'Resolved').length;
+    const rejected = allComplaints.filter(c => (c.Status||c.status) === 'Rejected').length;
+
+    document.getElementById('complaintStats').innerHTML = `
+      <div class="stat-card blue">
+        <div class="stat-icon">📬</div>
+        <div class="stat-value">${total}</div>
+        <div class="stat-label">Total Complaints</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-icon">⏳</div>
+        <div class="stat-value">${pending}</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-icon">✅</div>
+        <div class="stat-value">${resolved}</div>
+        <div class="stat-label">Resolved</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-icon">❌</div>
+        <div class="stat-value">${rejected}</div>
+        <div class="stat-label">Rejected</div>
+      </div>
+    `;
+  }
+
+  // ── Filter ────────────────────────────────────────────────────
+  window.setStatusFilter = function(status, btn) {
+    activeStatus = status;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterComplaints();
+  };
+
+  window.filterComplaints = function() {
+    const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    let filtered = allComplaints;
+
+    if (activeStatus !== 'all') {
+      filtered = filtered.filter(c =>
+        (c.Status || c.status || '') === activeStatus
+      );
+    }
+    if (q) {
+      filtered = filtered.filter(c =>
+        (c.StudentID || c.studentId || '').toLowerCase().includes(q) ||
+        (c.Course    || c.course    || '').toLowerCase().includes(q) ||
+        (c.Type      || c.type      || '').toLowerCase().includes(q)
+      );
+    }
+    renderComplaints(filtered);
+  };
+
+  // ── Render ────────────────────────────────────────────────────
+  function renderComplaints(complaints) {
+    const cc = document.getElementById('complaintsContent');
+    if (!complaints.length) {
+      cc.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <h3>No complaints found</h3>
+          <p>${activeStatus !== 'all' ? 'No ' + activeStatus.toLowerCase() + ' complaints.' : 'No complaints have been submitted yet.'}</p>
+        </div>`;
+      return;
+    }
+
+    cc.innerHTML = complaints.map((c, idx) => {
+      const studentId = c.StudentID  || c.studentId  || '—';
+      const course    = c.Course     || c.course     || '—';
+      const type      = c.Type       || c.type       || '—';
+      const message   = c.Message    || c.message    || '';
+      const status    = c.Status     || c.status     || 'Pending';
+      const timestamp = c.Timestamp  || c.timestamp  || '';
+      const response  = c.Response   || c.response   || '';
+      const assessId  = c.AssessmentID || c.assessmentId || '';
+
+      const statusMap = {
+        Pending:  { badge: 'badge-amber', icon: '⏳', label: 'Pending'  },
+        Resolved: { badge: 'badge-green', icon: '✅', label: 'Resolved' },
+        Rejected: { badge: 'badge-red',   icon: '❌', label: 'Rejected' },
+        Accepted: { badge: 'badge-blue',  icon: '👍', label: 'Accepted' },
+      };
+      const sm = statusMap[status] || statusMap.Pending;
+
+      return `
+        <div class="complaint-card ${status === 'Pending' ? 'complaint-pending' : ''}">
+          <div class="cc-header">
+            <div class="cc-left">
+              <div class="cc-student-id">${studentId}</div>
+              <span class="badge ${sm.badge}">${sm.icon} ${sm.label}</span>
+              <span class="badge badge-neutral">${type}</span>
+            </div>
+            <div class="cc-right text-xs text-muted">
+              🕐 ${DateUtil.formatFull(timestamp)}
+            </div>
+          </div>
+
+          <div class="cc-body">
+            <div class="cc-course">
+              <span class="text-xs text-muted">Course:</span>
+              <span class="fw-600 text-sm">${course}</span>
+              ${assessId ? `<span class="text-xs text-muted">· Assessment: ${assessId}</span>` : ''}
+            </div>
+            <div class="cc-message">${message}</div>
+          </div>
+
+          ${response ? `
+            <div class="cc-response">
+              <div class="ccr-label">💬 Instructor Response:</div>
+              <div class="ccr-text">${response}</div>
+            </div>` : ''}
+
+          ${status === 'Pending' ? `
+            <div class="cc-actions">
+              <button class="btn btn-primary btn-sm"
+                onclick="openResolve(${idx})">
+                📝 Respond
+              </button>
+              <button class="btn btn-success btn-sm"
+                onclick="quickResolve(${idx}, 'Resolved')">
+                ✅ Quick Resolve
+              </button>
+              <button class="btn btn-danger btn-sm"
+                onclick="quickResolve(${idx}, 'Rejected')">
+                ❌ Quick Reject
+              </button>
+            </div>` : `
+            <div class="cc-actions">
+              <button class="btn btn-outline btn-sm"
+                onclick="openResolve(${idx})">
+                ✏️ Update Response
+              </button>
+            </div>`}
+        </div>`;
+    }).join('');
+  }
+
+  // ── Open Resolve Modal ────────────────────────────────────────
+  window.openResolve = async function(idx) {
+    const visibleComplaints = getVisibleComplaints();
+    selectedComplaint = visibleComplaints[idx];
+    if (!selectedComplaint) return;
+
+    const studentId = selectedComplaint.StudentID  || selectedComplaint.studentId  || '—';
+    const course    = selectedComplaint.Course     || selectedComplaint.course     || '—';
+    const type      = selectedComplaint.Type       || selectedComplaint.type       || '—';
+    const message   = selectedComplaint.Message    || selectedComplaint.message    || '';
+    const assessId  = selectedComplaint.AssessmentID || selectedComplaint.assessmentId || '';
+
+    document.getElementById('resolveStudentLabel').textContent =
+      `${studentId} — ${course}`;
+
+    document.getElementById('complaintDetailBox').innerHTML = `
+      <div class="cdb-row"><span>Student:</span><strong>${studentId}</strong></div>
+      <div class="cdb-row"><span>Course:</span><strong>${course}</strong></div>
+      <div class="cdb-row"><span>Type:</span><strong>${type}</strong></div>
+      <div class="cdb-row"><span>Message:</span></div>
+      <div class="cdb-message">${message}</div>
+    `;
+
+    // Load assessment max for mark update
+    if (assessId) {
+      document.getElementById('updateMarkSection').style.display = '';
+      document.getElementById('newMarkMax').value = '—';
+      // Try to find max score from courses
+      const coursesRes = await API.getCourses();
+      if (coursesRes.success) {
+        for (const c of coursesRes.courses) {
+          const assRes = await API.getCourseAssessments(c.courseId);
+          if (assRes.success) {
+            const found = (assRes.assessments||[]).find(a => a.assessmentId === assessId);
+            if (found) {
+              document.getElementById('newMarkMax').value = found.maxScore;
+              break;
+            }
+          }
+        }
+      }
+    } else {
+      document.getElementById('updateMarkSection').style.display = 'none';
+    }
+
+    document.getElementById('updateMarkCheck').checked = false;
+    document.getElementById('updateMarkFields').classList.add('hidden');
+    document.getElementById('resolveMsg').value = '';
+    document.getElementById('resolveStatus').value = 'Resolved';
+    openModal('resolveModal');
+  };
+
+  function getVisibleComplaints() {
+    const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    let filtered = allComplaints;
+    if (activeStatus !== 'all') {
+      filtered = filtered.filter(c => (c.Status||c.status||'') === activeStatus);
+    }
+    if (q) {
+      filtered = filtered.filter(c =>
+        (c.StudentID||c.studentId||'').toLowerCase().includes(q) ||
+        (c.Course||c.course||'').toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  }
+
+  // ── Toggle Mark Update ────────────────────────────────────────
+  window.toggleMarkUpdate = function() {
+    const checked = document.getElementById('updateMarkCheck').checked;
+    document.getElementById('updateMarkFields').classList.toggle('hidden', !checked);
+  };
+
+  // ── Do Resolve ────────────────────────────────────────────────
+  window.doResolve = async function() {
+    const status   = document.getElementById('resolveStatus').value;
+    const response = document.getElementById('resolveMsg').value.trim();
+    if (!response) { Toast.error('Please write a response message.'); return; }
+
+    const btn = document.getElementById('resolveBtn');
+    Loader.show(btn, 'Submitting...');
+
+    // Update mark if checkbox is checked
+    const updateMark = document.getElementById('updateMarkCheck').checked;
+    if (updateMark) {
+      const newScore = Number(document.getElementById('newMarkScore').value);
+      const maxScore = Number(document.getElementById('newMarkMax').value);
+      if (!isNaN(newScore) && newScore >= 0 && newScore <= maxScore) {
+        const studentId = selectedComplaint.StudentID || selectedComplaint.studentId;
+        const assessId  = selectedComplaint.AssessmentID || selectedComplaint.assessmentId;
+        // Find courseId
+        const coursesRes = await API.getCourses();
+        if (coursesRes.success) {
+          for (const c of coursesRes.courses) {
+            const assRes = await API.getCourseAssessments(c.courseId);
+            if (assRes.success) {
+              const found = (assRes.assessments||[]).find(a => a.assessmentId === assessId);
+              if (found) {
+                await API.updateMark({
+                  courseId: c.courseId, assessmentId: assessId,
+                  studentId, score: newScore
+                });
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const res = await API.resolveComplaint({
+      studentId:  selectedComplaint.StudentID  || selectedComplaint.studentId,
+      timestamp:  selectedComplaint.Timestamp  || selectedComplaint.timestamp,
+      status,
+      response
+    });
+
+    Loader.hide(btn);
+
+    if (res.success) {
+      Toast.success('Response submitted!');
+      closeModal('resolveModal');
+      await loadComplaints();
+    } else {
+      Toast.error(res.message || 'Failed to submit response.');
+    }
+  };
+
+  // ── Quick Resolve ─────────────────────────────────────────────
+  window.quickResolve = async function(idx, status) {
+    const visibleComplaints = getVisibleComplaints();
+    const complaint = visibleComplaints[idx];
+    if (!complaint) return;
+
+    const defaultMsg = status === 'Resolved'
+      ? 'Your complaint has been reviewed and resolved.'
+      : 'Your complaint has been reviewed. The mark is correct.';
+
+    const res = await API.resolveComplaint({
+      studentId: complaint.StudentID || complaint.studentId,
+      timestamp: complaint.Timestamp || complaint.timestamp,
+      status,
+      response: defaultMsg
+    });
+
+    if (res.success) {
+      Toast.success(`Complaint ${status.toLowerCase()}!`);
+      await loadComplaints();
+    } else {
+      Toast.error(res.message || 'Action failed.');
+    }
+  };
+
+})();
+
+function injectComplaintStyles() {
+  if (document.getElementById('complaint-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'complaint-styles';
+  s.textContent = `
+    /* Filter buttons */
+    .filter-btn {
+      padding: 6px 12px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-full);
+      font-family: inherit;
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: var(--trans);
+      white-space: nowrap;
+    }
+    .filter-btn:hover  { border-color: var(--primary-light); color: var(--primary-light); }
+    .filter-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    /* Complaint Card */
+    .complaint-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      margin-bottom: 14px;
+      overflow: hidden;
+      transition: var(--trans);
+      box-shadow: var(--shadow-xs);
+    }
+    .complaint-card:hover { box-shadow: var(--shadow-md); }
+    .complaint-pending    { border-left: 4px solid var(--warning); }
+
+    /* Card Header */
+    .cc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .cc-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .cc-student-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: .88rem;
+      color: var(--text);
+    }
+
+    /* Card Body */
+    .cc-body    { padding: 0 18px 12px; }
+    .cc-course  { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .cc-message {
+      font-size: .86rem;
+      color: var(--text);
+      line-height: 1.65;
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      border-left: 3px solid var(--border);
+    }
+
+    /* Response */
+    .cc-response {
+      margin: 0 18px 12px;
+      background: #dbeafe;
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      border-left: 3px solid var(--primary-light);
+    }
+    .ccr-label { font-size: .75rem; font-weight: 700; color: var(--primary); margin-bottom: 4px; }
+    .ccr-text  { font-size: .84rem; color: var(--text); line-height: 1.5; }
+
+    /* Actions */
+    .cc-actions {
+      display: flex;
+      gap: 8px;
+      padding: 10px 18px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+      flex-wrap: wrap;
+    }
+
+    /* Complaint Detail Box */
+    .complaint-detail-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 12px 14px;
+    }
+    .cdb-row {
+      display: flex;
+      gap: 8px;
+      font-size: .84rem;
+      padding: 3px 0;
+    }
+    .cdb-row span { color: var(--text-muted); min-width: 70px; }
+    .cdb-message  {
+      font-size: .84rem;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 8px 10px;
+      margin-top: 4px;
+      line-height: 1.6;
+    }
+
+    /* Update mark section */
+    .update-mark-section {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 12px 14px;
+    }
+    .ums-toggle { margin-bottom: 0; }
+    .ums-fields { margin-top: 12px; }
+    .ums-fields.hidden { display: none; }
+
+    @media (max-width: 600px) {
+      .cc-header  { flex-direction: column; align-items: flex-start; }
+      .cc-actions { flex-direction: column; }
+      .cc-actions .btn { width: 100%; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

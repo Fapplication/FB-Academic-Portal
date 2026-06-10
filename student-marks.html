@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Marks – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireStudent();
+  if (!session) return;
+
+  renderLayout({ role: 'student', activePage: 'marks' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>📊 My Marks</h1>
+        <p>View your grades, assessment breakdown, and submit complaints.</p>
+      </div>
+
+      <!-- Course Filter -->
+      <div class="card mb-20">
+        <div class="card-body" style="padding:14px 20px;">
+          <div class="flex gap-12 items-center flex-wrap">
+            <label class="form-label mb-0">Filter Course:</label>
+            <select class="form-control" id="courseFilter" style="max-width:320px;" onchange="filterCourse()">
+              <option value="">All Courses</option>
+            </select>
+            <div class="flex gap-8 ml-auto flex-wrap">
+              <button class="btn btn-outline btn-sm" onclick="printMarks()">🖨 Print</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Marks Content -->
+      <div id="marksContent">
+        ${skeletonCard(4)}
+      </div>
+    </div>
+
+    <!-- ══ COMPLAINT MODAL ══ -->
+    <div class="modal-overlay" id="complaintModal">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <h3>📬 Submit Complaint</h3>
+            <p class="text-sm text-muted" id="complaintCourseLabel"></p>
+          </div>
+          <button class="modal-close" onclick="closeModal('complaintModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Assessment</label>
+            <select class="form-control" id="complaintAssessment">
+              <option value="">— Select Assessment —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Complaint Type</label>
+            <select class="form-control" id="complaintType">
+              <option value="Marking Error">Marking Error</option>
+              <option value="Missing Mark">Missing Mark</option>
+              <option value="Grade Appeal">Grade Appeal</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Your Message</label>
+            <textarea class="form-control" id="complaintMsg" rows="4"
+              placeholder="Describe your concern clearly and in detail..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('complaintModal')">Cancel</button>
+          <button class="btn btn-danger" id="submitComplaintBtn" onclick="doSubmitComplaint()">
+            Submit Complaint
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ACCEPT CONFIRM MODAL ══ -->
+    <div class="modal-overlay" id="acceptModal">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <h3>✅ Accept Marks</h3>
+          <button class="modal-close" onclick="closeModal('acceptModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="accept-confirm-box">
+            <div class="acb-icon">✅</div>
+            <p>Are you sure you want to <strong>accept</strong> your marks for:</p>
+            <div class="acb-course" id="acceptCourseName"></div>
+            <p class="text-xs text-muted mt-8">Once accepted, you cannot raise a complaint for this course.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('acceptModal')">Cancel</button>
+          <button class="btn btn-success" id="confirmAcceptBtn" onclick="doAcceptMark()">
+            ✓ Yes, Accept
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectMarksStyles();
+
+  // State
+  let allMarks   = [];
+  let allCourses = [];
+  let currentCourseId   = '';
+  let currentCourseName = '';
+  let currentAssessments = [];
+
+  // Load data
+  const [marksRes, coursesRes] = await Promise.all([
+    API.getMarks(session.studentId),
+    API.getCourses()
+  ]);
+
+  if (coursesRes.success && coursesRes.courses) {
+    allCourses = coursesRes.courses;
+    const sel  = document.getElementById('courseFilter');
+    allCourses.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value       = c.courseId;
+      opt.textContent = c.courseName;
+      sel.appendChild(opt);
+    });
+  }
+
+  if (!marksRes.success || !marksRes.marks || !marksRes.marks.length) {
+    document.getElementById('marksContent').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h3>No marks available yet</h3>
+        <p>Your instructor has not uploaded marks yet. Check back later.</p>
+      </div>`;
+    return;
+  }
+
+  allMarks = marksRes.marks;
+  renderMarks(allMarks);
+
+  // ── Filter ──────────────────────────────────────────────────
+  window.filterCourse = function() {
+    const val = document.getElementById('courseFilter').value;
+    const filtered = val ? allMarks.filter(m => m.courseId === val) : allMarks;
+    renderMarks(filtered);
+  };
+
+  // ── Render Marks ────────────────────────────────────────────
+  function renderMarks(marks) {
+    const mc = document.getElementById('marksContent');
+    if (!marks.length) {
+      mc.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No marks for this course</h3></div>`;
+      return;
+    }
+
+    mc.innerHTML = marks.map(m => {
+      const total = parseFloat(m.weightedTotal || 0);
+      const g     = Grade.getLetter(total);
+      const status = m.status || 'Pending';
+      const statusBadge = {
+        'Accepted':   '<span class="badge badge-green">✓ Accepted</span>',
+        'Complained': '<span class="badge badge-red">⚠ Complained</span>',
+        'Pending':    '<span class="badge badge-amber">⏳ Pending</span>',
+        'Resolved':   '<span class="badge badge-cyan">✓ Resolved</span>',
+      }[status] || '<span class="badge badge-neutral">—</span>';
+
+      // Assessment rows
+      const assessRows = (m.assessments || []).map(a => {
+        const scored = a.score !== null && a.score !== '' && a.score !== undefined;
+        const pct    = scored ? ((Number(a.score) / Number(a.maxScore)) * 100).toFixed(0) : null;
+        const ag     = pct !== null ? Grade.getLetter(Number(pct)) : null;
+        return `
+          <tr>
+            <td class="fw-600">${a.name}</td>
+            <td><span class="badge badge-blue">${a.weight}%</span></td>
+            <td class="text-center">${a.maxScore}</td>
+            <td class="text-center fw-700 ${scored ? '' : 'text-muted'}">
+              ${scored ? a.score : '—'}
+            </td>
+            <td class="text-center">
+              ${pct !== null
+                ? `<span style="color:${ag.color};font-weight:700;">${pct}%</span>`
+                : '<span class="text-muted">—</span>'}
+            </td>
+            <td>
+              ${pct !== null
+                ? `<div class="progress" style="width:80px;">
+                     <div class="progress-bar" style="width:${pct}%;background:${ag.color};"></div>
+                   </div>`
+                : '—'}
+            </td>
+          </tr>`;
+      }).join('');
+
+      const canAct = status === 'Pending';
+
+      return `
+        <div class="mark-card mb-20">
+          <!-- Course Header -->
+          <div class="mark-card-header">
+            <div class="mch-left">
+              <div class="mch-code">${m.courseCode || ''}</div>
+              <div class="mch-name">${m.courseName}</div>
+            </div>
+            <div class="mch-right">
+              <div class="grade-circle" style="border-color:${g.color};color:${g.color};">
+                <div class="gc-letter">${g.letter}</div>
+                <div class="gc-score">${total}%</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status bar -->
+          <div class="mark-status-bar">
+            <div class="flex items-center gap-8">
+              <span class="text-xs text-muted">Status:</span>
+              ${statusBadge}
+            </div>
+            ${m.complaintResponse ? `
+              <div class="complaint-response">
+                💬 <strong>Instructor response:</strong> ${m.complaintResponse}
+              </div>` : ''}
+          </div>
+
+          <!-- Score progress -->
+          <div class="mark-progress-section">
+            <div class="flex-between mb-6">
+              <span class="text-sm fw-600">Overall Score</span>
+              <span class="fw-800" style="color:${g.color};">${total}% / 100%</span>
+            </div>
+            <div class="progress" style="height:10px;">
+              <div class="progress-bar" style="width:${Math.min(total,100)}%;background:${g.color};"></div>
+            </div>
+          </div>
+
+          <!-- Assessment Table -->
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Assessment</th>
+                  <th>Weight</th>
+                  <th class="text-center">Max</th>
+                  <th class="text-center">Score</th>
+                  <th class="text-center">Pct</th>
+                  <th>Bar</th>
+                </tr>
+              </thead>
+              <tbody>${assessRows || '<tr><td colspan="6" class="text-center text-muted" style="padding:16px;">No assessments</td></tr>'}</tbody>
+            </table>
+          </div>
+
+          <!-- Actions -->
+          ${canAct ? `
+          <div class="mark-actions">
+            <button class="btn btn-success btn-sm"
+              onclick="openAccept('${m.courseId}','${m.courseName.replace(/'/g,"\\'")}')">
+              ✓ Accept Marks
+            </button>
+            <button class="btn btn-danger btn-sm"
+              onclick="openComplaint('${m.courseId}','${m.courseName.replace(/'/g,"\\'")}',${JSON.stringify(m.assessments||[]).replace(/"/g,'&quot;')})">
+              ⚠ Raise Complaint
+            </button>
+          </div>` : `
+          <div class="mark-actions">
+            <span class="text-xs text-muted">
+              ${status === 'Accepted' ? '✓ You have accepted these marks.' :
+                status === 'Complained' ? '⚠ Your complaint is under review.' :
+                status === 'Resolved' ? '✓ Complaint resolved.' : ''}
+            </span>
+          </div>`}
+        </div>`;
+    }).join('');
+  }
+
+  // ── Accept Mark ─────────────────────────────────────────────
+  window.openAccept = function(courseId, courseName) {
+    currentCourseId   = courseId;
+    currentCourseName = courseName;
+    document.getElementById('acceptCourseName').textContent = courseName;
+    openModal('acceptModal');
+  };
+
+  window.doAcceptMark = async function() {
+    const btn = document.getElementById('confirmAcceptBtn');
+    Loader.show(btn, 'Saving...');
+    const res = await API.submitComplaint({
+      studentId: session.studentId,
+      courseId:  currentCourseId,
+      type:      'Accept',
+      message:   'Student accepted marks.',
+      status:    'Accepted'
+    });
+    Loader.hide(btn);
+    if (res.success) {
+      Toast.success('Marks accepted!');
+      closeModal('acceptModal');
+      // Refresh
+      const r2 = await API.getMarks(session.studentId);
+      if (r2.success) { allMarks = r2.marks; filterCourse(); }
+    } else {
+      Toast.error(res.message || 'Failed to accept marks.');
+    }
+  };
+
+  // ── Complaint ────────────────────────────────────────────────
+  window.openComplaint = function(courseId, courseName, assessments) {
+    currentCourseId    = courseId;
+    currentCourseName  = courseName;
+    currentAssessments = typeof assessments === 'string'
+      ? JSON.parse(assessments.replace(/&quot;/g,'"'))
+      : assessments;
+
+    document.getElementById('complaintCourseLabel').textContent = courseName;
+
+    const sel = document.getElementById('complaintAssessment');
+    sel.innerHTML = '<option value="">— All / General —</option>';
+    currentAssessments.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.assessmentId || a.name;
+      opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+
+    document.getElementById('complaintMsg').value = '';
+    openModal('complaintModal');
+  };
+
+  window.doSubmitComplaint = async function() {
+    const type       = document.getElementById('complaintType').value;
+    const assessment = document.getElementById('complaintAssessment').value;
+    const msg        = document.getElementById('complaintMsg').value.trim();
+    if (!msg) { Toast.error('Please write your complaint message.'); return; }
+
+    const btn = document.getElementById('submitComplaintBtn');
+    Loader.show(btn, 'Submitting...');
+    const res = await API.submitComplaint({
+      studentId:    session.studentId,
+      courseId:     currentCourseId,
+      assessmentId: assessment,
+      type,
+      message: msg
+    });
+    Loader.hide(btn);
+
+    if (res.success) {
+      Toast.success('Complaint submitted successfully!');
+      closeModal('complaintModal');
+      const r2 = await API.getMarks(session.studentId);
+      if (r2.success) { allMarks = r2.marks; filterCourse(); }
+    } else {
+      Toast.error(res.message || 'Submission failed.');
+    }
+  };
+
+  // ── Print ────────────────────────────────────────────────────
+  window.printMarks = function() { window.print(); };
+
+})();
+
+function injectMarksStyles() {
+  if (document.getElementById('marks-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'marks-styles';
+  s.textContent = `
+    /* Mark Card */
+    .mark-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      transition: var(--trans);
+    }
+    .mark-card:hover { box-shadow: var(--shadow-md); }
+
+    /* Mark Card Header */
+    .mark-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+      border-bottom: 1px solid var(--border);
+    }
+    .mch-code { font-size:.72rem; font-weight:700; color:var(--primary-light); text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
+    .mch-name { font-size:1rem; font-weight:700; color:var(--text); }
+
+    /* Grade Circle */
+    .grade-circle {
+      width: 70px; height: 70px;
+      border-radius: 50%;
+      border: 3px solid;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      box-shadow: var(--shadow-sm);
+    }
+    .gc-letter { font-size:1.2rem; font-weight:800; line-height:1; }
+    .gc-score  { font-size:.65rem; font-weight:600; opacity:.7; }
+
+    /* Status Bar */
+    .mark-status-bar {
+      padding: 10px 24px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .complaint-response {
+      font-size: .8rem;
+      color: var(--text);
+      background: #dbeafe;
+      padding: 6px 10px;
+      border-radius: var(--r-sm);
+      border-left: 3px solid var(--primary-light);
+    }
+
+    /* Progress Section */
+    .mark-progress-section {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Actions */
+    .mark-actions {
+      padding: 14px 24px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background: var(--bg);
+      flex-wrap: wrap;
+    }
+
+    /* Accept Confirm */
+    .accept-confirm-box {
+      text-align: center;
+      padding: 12px 0;
+    }
+    .acb-icon   { font-size: 3rem; margin-bottom: 12px; }
+    .acb-course {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      font-weight: 700;
+      margin-top: 10px;
+      font-size: .9rem;
+    }
+
+    /* Print styles */
+    @media print {
+      .sidebar, .topbar, .mark-actions, .card-header button,
+      .modal-overlay { display: none !important; }
+      .main-content  { margin-left: 0 !important; }
+      .page-content  { padding: 0 !important; }
+      .mark-card     { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+    }
+
+    @media (max-width: 600px) {
+      .mark-card-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .grade-circle     { width: 56px; height: 56px; }
+      .gc-letter        { font-size: 1rem; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

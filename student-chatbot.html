@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatbot – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireStudent();
+  if (!session) return;
+
+  renderLayout({ role: 'student', activePage: 'chatbot' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>🤖 AI Chatbot Assistant</h1>
+        <p>Ask anything about your marks, tests, notes, complaints or portal features.</p>
+      </div>
+
+      <div class="chat-layout">
+
+        <!-- ── Left: Chat Window ── -->
+        <div class="chat-main">
+          <div class="chat-window">
+
+            <!-- Chat Header -->
+            <div class="chat-win-header">
+              <div class="cwh-avatar">🤖</div>
+              <div class="cwh-info">
+                <div class="cwh-name">Portal Assistant</div>
+                <div class="cwh-status"><span class="online-dot"></span> Online</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="clearChat()" title="Clear chat">🗑</button>
+            </div>
+
+            <!-- Messages -->
+            <div class="chat-messages" id="chatMessages">
+              <!-- Welcome message injected by JS -->
+            </div>
+
+            <!-- Typing indicator (hidden) -->
+            <div class="typing-indicator hidden" id="typingIndicator">
+              <div class="ti-avatar">🤖</div>
+              <div class="ti-dots">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+
+            <!-- Input Row -->
+            <div class="chat-input-area">
+              <div class="chat-input-wrap">
+                <input
+                  type="text"
+                  id="chatInput"
+                  class="chat-input"
+                  placeholder="Type your question..."
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"
+                  maxlength="500"
+                />
+                <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">
+                  ➤
+                </button>
+              </div>
+              <div class="chat-input-hint">Press Enter to send</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Right: Suggestions ── -->
+        <div class="chat-sidebar">
+
+          <!-- Quick Questions -->
+          <div class="card mb-16">
+            <div class="card-header">
+              <span class="card-title">💡 Quick Questions</span>
+            </div>
+            <div class="card-body p-16">
+              <div class="quick-qs" id="quickQuestions"></div>
+            </div>
+          </div>
+
+          <!-- Topics -->
+          <div class="card mb-16">
+            <div class="card-header">
+              <span class="card-title">📂 Topics</span>
+            </div>
+            <div class="card-body p-16">
+              <div class="topic-chips">
+                <button class="topic-chip" onclick="sendQuick('marks')">📊 Marks</button>
+                <button class="topic-chip" onclick="sendQuick('tests')">📝 Tests</button>
+                <button class="topic-chip" onclick="sendQuick('notes')">📚 Notes</button>
+                <button class="topic-chip" onclick="sendQuick('complaint')">📬 Complaints</button>
+                <button class="topic-chip" onclick="sendQuick('password')">🔑 Password</button>
+                <button class="topic-chip" onclick="sendQuick('telegram')">✈️ Telegram</button>
+                <button class="topic-chip" onclick="sendQuick('grade')">🏅 Grades</button>
+                <button class="topic-chip" onclick="sendQuick('deadline')">📅 Deadlines</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Telegram Bot CTA -->
+          <div class="card" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-color:#bae6fd;">
+            <div class="card-body p-16">
+              <div class="fw-700 text-sm mb-6">✈️ Also on Telegram!</div>
+              <p class="text-xs mb-12">Get the same assistant on Telegram — receive results & notices instantly.</p>
+              <a href="https://t.me/FBResultPortalBot" target="_blank"
+                 class="btn btn-sm w-full" style="background:#0088cc;color:#fff;justify-content:center;">
+                Open @FBResultPortalBot
+              </a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectChatStyles();
+
+  // ── Chat State ─────────────────────────────────────────────
+  let chatHistory  = [];
+  let isTyping     = false;
+
+  // ── Quick Questions ────────────────────────────────────────
+  const quickQs = [
+    'How do I view my marks?',
+    'How do I submit a complaint?',
+    'Where can I download lecture notes?',
+    'How do I take an online test?',
+    'What is my current GPA?',
+    'How do I reset my password?',
+    'How do I join the Telegram bot?',
+    'What courses am I enrolled in?',
+  ];
+
+  document.getElementById('quickQuestions').innerHTML = quickQs.map(q => `
+    <button class="quick-q-btn" onclick="sendQuickQ('${q.replace(/'/g,"\\'")}')">
+      ${q}
+    </button>`).join('');
+
+  // ── Welcome Message ────────────────────────────────────────
+  appendBotMessage(
+    `👋 Hello, <strong>${session.name.split(' ')[0]}</strong>! I'm your portal assistant.\n\n` +
+    `I can help you with:\n` +
+    `• 📊 Viewing and understanding your marks\n` +
+    `• 📝 Taking online tests\n` +
+    `• 📚 Finding lecture notes\n` +
+    `• 📬 Submitting complaints\n` +
+    `• 🔑 Account & password help\n\n` +
+    `What would you like to know?`,
+    false
+  );
+
+  // ── Send Message ───────────────────────────────────────────
+  window.sendMessage = async function() {
+    const input = document.getElementById('chatInput');
+    const text  = input.value.trim();
+    if (!text || isTyping) return;
+
+    input.value = '';
+    appendUserMessage(text);
+    chatHistory.push({ role: 'user', text });
+    await getBotReply(text);
+  };
+
+  window.sendQuickQ = async function(q) {
+    if (isTyping) return;
+    document.getElementById('chatInput').value = '';
+    appendUserMessage(q);
+    chatHistory.push({ role: 'user', text: q });
+    await getBotReply(q);
+  };
+
+  window.sendQuick = async function(topic) {
+    const topicMap = {
+      marks:     'How do I view my marks?',
+      tests:     'How do I take an online test?',
+      notes:     'Where can I download lecture notes?',
+      complaint: 'How do I submit a complaint about my marks?',
+      password:  'How do I reset my password?',
+      telegram:  'How do I join the Telegram bot?',
+      grade:     'How is my grade calculated?',
+      deadline:  'When are the test deadlines?',
+    };
+    await sendQuickQ(topicMap[topic] || topic);
+  };
+
+  // ── Get Bot Reply ──────────────────────────────────────────
+  async function getBotReply(message) {
+    isTyping = true;
+    showTyping(true);
+
+    // Try API first
+    const res = await API.chatbot(message, session.studentId);
+    await delay(600); // natural feel
+
+    showTyping(false);
+    isTyping = false;
+
+    if (res.success && res.reply) {
+      appendBotMessage(res.reply);
+      chatHistory.push({ role: 'bot', text: res.reply });
+    } else {
+      // Client-side fallback
+      const fallback = getFallbackReply(message);
+      appendBotMessage(fallback);
+      chatHistory.push({ role: 'bot', text: fallback });
+    }
+  }
+
+  // ── Client-side Fallback Replies ───────────────────────────
+  function getFallbackReply(msg) {
+    const m = msg.toLowerCase();
+    if (m.includes('mark') || m.includes('grade') || m.includes('score')) {
+      return `📊 <strong>Viewing Your Marks</strong>\n\nGo to <strong>My Marks</strong> from the sidebar or dashboard.\n\nYou'll see:\n• Your score for each assessment\n• Weighted total percentage\n• Letter grade (A, B, C...)\n• Option to Accept or Raise a Complaint`;
+    }
+    if (m.includes('complaint') || m.includes('appeal')) {
+      return `📬 <strong>Submitting a Complaint</strong>\n\nGo to <strong>My Marks</strong> → find the course → click <em>"Raise Complaint"</em>.\n\nSelect the assessment, complaint type, and write your message.\n\n⚠️ You can only complain while status is "Pending".`;
+    }
+    if (m.includes('test') || m.includes('exam') || m.includes('quiz')) {
+      return `📝 <strong>Taking Online Tests</strong>\n\nGo to <strong>Online Tests</strong> from the sidebar.\n\n1. Select your course\n2. Review the intro screen\n3. Click "Start Test"\n4. Answer and navigate freely\n5. Submit before the timer ends\n\n⚠️ Don't refresh during the test!`;
+    }
+    if (m.includes('note') || m.includes('lecture') || m.includes('material')) {
+      return `📚 <strong>Lecture Notes</strong>\n\nGo to <strong>Lecture Notes</strong> from the sidebar.\n\nYou can:\n• Filter by course\n• Search by title\n• Switch between grid and list view\n• Download PDF, Word, PPT files`;
+    }
+    if (m.includes('password') || m.includes('forgot') || m.includes('reset')) {
+      return `🔑 <strong>Reset Password</strong>\n\nOn the login page, click <em>"Forgot password?"</em>\n\n1. Enter your Student ID\n2. Receive OTP via Telegram or Email\n3. Enter OTP\n4. Set new password\n\nMake sure your Telegram username is registered!`;
+    }
+    if (m.includes('telegram') || m.includes('bot') || m.includes('notification')) {
+      return `✈️ <strong>Telegram Bot</strong>\n\nJoin <strong>@FBResultPortalBot</strong> on Telegram.\n\nYou'll receive:\n• Mark upload notifications\n• New notices from instructor\n• Test reminders\n• Complaint responses\n\nYour Telegram username must be saved in your profile.`;
+    }
+    if (m.includes('gpa') || m.includes('cgpa') || m.includes('calculate')) {
+      return `🏅 <strong>Grade Calculation</strong>\n\nYour grade is calculated using <strong>weighted assessments</strong>.\n\nEach assessment has:\n• A weight (e.g. Quiz 10%, Mid 30%, Final 50%)\n• A max score\n\nTotal = Σ (score/maxScore × weight)\n\nGrade scale: A+(90+), A(85), B+(75), C(55), F(<50)`;
+    }
+    if (m.includes('course') || m.includes('subject') || m.includes('enroll')) {
+      return `📚 <strong>Your Courses</strong>\n\nYour enrolled courses are visible on the <strong>Dashboard</strong> and <strong>My Marks</strong> page.\n\nCourses are managed by your instructor. Contact them if a course is missing.`;
+    }
+    if (m.includes('hello') || m.includes('hi') || m.includes('hey')) {
+      return `👋 Hello! How can I help you today?\n\nYou can ask me about marks, tests, lecture notes, complaints, grades, or account issues.`;
+    }
+    if (m.includes('thank')) {
+      return `😊 You're welcome! Feel free to ask anything else.`;
+    }
+    return `🤔 I'm not sure about that specific question.\n\nTry asking about:\n• <em>marks</em> or <em>grades</em>\n• <em>online tests</em>\n• <em>lecture notes</em>\n• <em>complaints</em>\n• <em>password reset</em>\n• <em>Telegram bot</em>`;
+  }
+
+  // ── Append Messages ────────────────────────────────────────
+  function appendUserMessage(text) {
+    const msgs = document.getElementById('chatMessages');
+    const div  = document.createElement('div');
+    div.className = 'chat-msg chat-msg-user';
+    div.innerHTML = `
+      <div class="chat-bubble user">
+        ${escHtml(text)}
+        <div class="chat-time">${timeNow()}</div>
+      </div>`;
+    msgs.appendChild(div);
+    scrollBottom();
+  }
+
+  function appendBotMessage(text, animate = true) {
+    const msgs = document.getElementById('chatMessages');
+    const div  = document.createElement('div');
+    div.className = 'chat-msg chat-msg-bot';
+
+    const formatted = text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/•/g, '•')
+      .replace(/\n/g, '<br>');
+
+    div.innerHTML = `
+      <div class="chat-bot-avatar">🤖</div>
+      <div class="chat-bubble bot ${animate ? 'animate-in' : ''}">
+        ${formatted}
+        <div class="chat-time">${timeNow()}</div>
+      </div>`;
+    msgs.appendChild(div);
+    scrollBottom();
+  }
+
+  // ── Typing Indicator ───────────────────────────────────────
+  function showTyping(show) {
+    const ti = document.getElementById('typingIndicator');
+    if (!ti) return;
+    ti.classList.toggle('hidden', !show);
+    if (show) scrollBottom();
+  }
+
+  // ── Clear Chat ─────────────────────────────────────────────
+  window.clearChat = function() {
+    chatHistory = [];
+    document.getElementById('chatMessages').innerHTML = '';
+    appendBotMessage(`Chat cleared! How can I help you? 😊`, false);
+  };
+
+  // ── Utilities ──────────────────────────────────────────────
+  function scrollBottom() {
+    const msgs = document.getElementById('chatMessages');
+    if (msgs) setTimeout(() => msgs.scrollTop = msgs.scrollHeight, 50);
+  }
+
+  function timeNow() {
+    return new Date().toLocaleTimeString('en-ET', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function delay(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+})();
+
+function injectChatStyles() {
+  if (document.getElementById('chat-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'chat-styles';
+  s.textContent = `
+    /* Layout */
+    .chat-layout {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .chat-main    { min-width: 0; }
+    .chat-sidebar { display: flex; flex-direction: column; }
+
+    /* Chat Window */
+    .chat-window {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      height: 580px;
+    }
+
+    /* Chat Header */
+    .chat-win-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      background: linear-gradient(135deg, #1e40af, #3b82f6);
+      flex-shrink: 0;
+    }
+    .cwh-avatar {
+      width: 40px; height: 40px;
+      background: rgba(255,255,255,.2);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .cwh-info    { flex: 1; }
+    .cwh-name    { color: #fff; font-weight: 700; font-size: .92rem; }
+    .cwh-status  { display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,.75); font-size: .72rem; }
+    .online-dot  {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #4ade80;
+      animation: pulse-dot 2s infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100% { opacity:1; }
+      50%      { opacity:.4; }
+    }
+
+    /* Messages Area */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #f8fafc;
+    }
+    .chat-messages::-webkit-scrollbar { width: 4px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+    /* Message rows */
+    .chat-msg { display: flex; align-items: flex-end; gap: 8px; }
+    .chat-msg-user { flex-direction: row-reverse; }
+    .chat-msg-bot  { flex-direction: row; }
+
+    .chat-bot-avatar {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #1e40af, #3b82f6);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .85rem;
+      flex-shrink: 0;
+      margin-bottom: 2px;
+    }
+
+    /* Bubbles */
+    .chat-bubble {
+      max-width: 76%;
+      padding: 10px 14px;
+      border-radius: var(--r-md);
+      font-size: .86rem;
+      line-height: 1.6;
+      position: relative;
+    }
+    .chat-bubble.user {
+      background: var(--primary);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-bubble.bot {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+      box-shadow: var(--shadow-xs);
+    }
+    .chat-bubble.animate-in {
+      animation: bubbleIn .25s var(--ease);
+    }
+    @keyframes bubbleIn {
+      from { opacity:0; transform:translateY(6px) scale(.97); }
+      to   { opacity:1; transform:translateY(0) scale(1); }
+    }
+
+    .chat-time {
+      font-size: .65rem;
+      opacity: .55;
+      margin-top: 4px;
+      text-align: right;
+    }
+    .chat-bubble.bot .chat-time { text-align: left; }
+
+    /* Typing Indicator */
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 16px 8px;
+      background: #f8fafc;
+      flex-shrink: 0;
+    }
+    .ti-avatar {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #1e40af, #3b82f6);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .85rem;
+      flex-shrink: 0;
+    }
+    .ti-dots {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: var(--r-md);
+      border-bottom-left-radius: 4px;
+    }
+    .ti-dots span {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-light);
+      animation: bounce-dot .9s infinite;
+    }
+    .ti-dots span:nth-child(2) { animation-delay: .15s; }
+    .ti-dots span:nth-child(3) { animation-delay: .30s; }
+    @keyframes bounce-dot {
+      0%,100% { transform: translateY(0); }
+      40%      { transform: translateY(-5px); }
+    }
+
+    /* Input Area */
+    .chat-input-area {
+      padding: 12px 14px 10px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-card);
+      flex-shrink: 0;
+    }
+    .chat-input-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-full);
+      padding: 4px 4px 4px 14px;
+      transition: var(--trans);
+    }
+    .chat-input-wrap:focus-within {
+      border-color: var(--primary-light);
+      background: #fff;
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+    .chat-input {
+      flex: 1;
+      border: none;
+      background: none;
+      font-family: inherit;
+      font-size: .88rem;
+      color: var(--text);
+      outline: none;
+      padding: 5px 0;
+    }
+    .chat-input::placeholder { color: var(--text-light); }
+    .chat-send-btn {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      font-size: 1rem;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: var(--trans);
+      flex-shrink: 0;
+    }
+    .chat-send-btn:hover { background: var(--primary-dark); transform: scale(1.08); }
+    .chat-input-hint { font-size: .68rem; color: var(--text-light); margin-top: 5px; text-align: right; }
+
+    /* Quick Questions */
+    .quick-qs { display: flex; flex-direction: column; gap: 6px; }
+    .quick-q-btn {
+      text-align: left;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 7px 10px;
+      font-family: inherit;
+      font-size: .78rem;
+      color: var(--text);
+      cursor: pointer;
+      transition: var(--trans);
+      line-height: 1.4;
+    }
+    .quick-q-btn:hover {
+      border-color: var(--primary-light);
+      background: var(--primary-glow);
+      color: var(--primary);
+    }
+
+    /* Topic Chips */
+    .topic-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .topic-chip {
+      padding: 5px 11px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      font-family: inherit;
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: var(--trans);
+    }
+    .topic-chip:hover {
+      background: var(--primary-glow);
+      border-color: var(--primary-light);
+      color: var(--primary);
+    }
+
+    @media (max-width: 900px) {
+      .chat-layout { grid-template-columns: 1fr; }
+      .chat-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .chat-window  { height: 480px; }
+    }
+    @media (max-width: 560px) {
+      .chat-sidebar { grid-template-columns: 1fr; }
+      .chat-window  { height: 420px; }
+      .chat-bubble  { max-width: 88%; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

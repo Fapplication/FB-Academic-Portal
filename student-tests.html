@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Online Tests – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireStudent();
+  if (!session) return;
+
+  renderLayout({ role: 'student', activePage: 'tests' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>📝 Online Tests</h1>
+        <p>Select a course and start your timed assessment.</p>
+      </div>
+      <div id="testRoot"></div>
+    </div>
+  `;
+
+  injectTestStyles();
+
+  // ── State ──────────────────────────────────────────────────
+  let questions    = [];
+  let answers      = {};
+  let currentQ     = 0;
+  let timerInterval= null;
+  let timeLeft     = 0;
+  let testCourse   = null;
+  let testStarted  = false;
+
+  // ── Load Courses ───────────────────────────────────────────
+  const coursesRes = await API.getCourses();
+  const courses    = coursesRes.success ? coursesRes.courses : [];
+
+  showCourseSelect(courses);
+
+  // ══ SCREENS ════════════════════════════════════════════════
+
+  function showCourseSelect(courses) {
+    const root = document.getElementById('testRoot');
+    if (!courses.length) {
+      root.innerHTML = `<div class="empty-state"><div class="empty-icon">📚</div><h3>No courses available</h3></div>`;
+      return;
+    }
+
+    root.innerHTML = `
+      <div class="grid-2" style="gap:16px;">
+        ${courses.map(c => `
+          <div class="course-test-card" onclick="selectCourse('${c.courseId}','${c.courseName.replace(/'/g,"\\'")}','${c.courseCode||''}')">
+            <div class="ctc-icon">📝</div>
+            <div class="ctc-info">
+              <div class="ctc-code">${c.courseCode || ''}</div>
+              <div class="ctc-name">${c.courseName}</div>
+            </div>
+            <div class="ctc-arrow">→</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  window.selectCourse = async function(courseId, courseName, courseCode) {
+    testCourse = { courseId, courseName, courseCode };
+    const root = document.getElementById('testRoot');
+    root.innerHTML = `<div class="flex-center" style="padding:40px;"><div class="spinner spinner-dark"></div></div>`;
+
+    const res = await API.getOnlineTests(courseId);
+    if (!res.success || !res.questions || !res.questions.length) {
+      root.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <h3>No questions available</h3>
+          <p>Your instructor has not uploaded questions for this course yet.</p>
+          <button class="btn btn-outline mt-16" onclick="showCourseSelect(${JSON.stringify(courses)})">← Back</button>
+        </div>`;
+      return;
+    }
+
+    questions = res.questions;
+    showTestIntro();
+  };
+
+  // ── Test Intro Screen ──────────────────────────────────────
+  function showTestIntro() {
+    const totalTime = questions.length * 90;
+    const mins      = Math.floor(totalTime / 60);
+    const root      = document.getElementById('testRoot');
+
+    root.innerHTML = `
+      <div class="test-intro-card">
+        <div class="tic-header">
+          <div class="tic-icon">📝</div>
+          <div>
+            <div class="tic-code">${testCourse.courseCode}</div>
+            <h2 class="tic-name">${testCourse.courseName}</h2>
+          </div>
+        </div>
+        <div class="tic-stats">
+          <div class="tic-stat">
+            <div class="tis-val">${questions.length}</div>
+            <div class="tis-lbl">Questions</div>
+          </div>
+          <div class="tic-stat">
+            <div class="tis-val">${mins}</div>
+            <div class="tis-lbl">Minutes</div>
+          </div>
+          <div class="tic-stat">
+            <div class="tis-val">MCQ</div>
+            <div class="tis-lbl">Type</div>
+          </div>
+        </div>
+        <div class="tic-rules">
+          <div class="tic-rule">📌 Each question has one correct answer</div>
+          <div class="tic-rule">⏱ Timer starts when you click Start</div>
+          <div class="tic-rule">⚠ Do not refresh the page during the test</div>
+          <div class="tic-rule">✅ You can navigate between questions freely</div>
+          <div class="tic-rule">📤 Submit before the timer runs out</div>
+        </div>
+        <div class="flex gap-12 mt-24">
+          <button class="btn btn-outline" onclick="showCourseSelect(${JSON.stringify(courses).replace(/"/g,'&quot;')})">← Back</button>
+          <button class="btn btn-primary btn-lg" onclick="startTest()">Start Test →</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Start Test ─────────────────────────────────────────────
+  window.startTest = function() {
+    answers   = {};
+    currentQ  = 0;
+    timeLeft  = questions.length * 90;
+    testStarted = true;
+    renderQuestion();
+    startTimer();
+  };
+
+  // ── Timer ──────────────────────────────────────────────────
+  function startTimer() {
+    clearInterval(timerInterval);
+    updateTimerDisplay();
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      updateTimerDisplay();
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+        Toast.warning('Time is up! Submitting automatically...');
+        setTimeout(submitTest, 1500);
+      }
+    }, 1000);
+  }
+
+  function updateTimerDisplay() {
+    const el = document.getElementById('timerDisplay');
+    if (!el) return;
+    const m  = Math.floor(timeLeft / 60);
+    const s  = timeLeft % 60;
+    el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    el.className   = 'timer-display' + (timeLeft <= 60 ? ' timer-danger' : timeLeft <= 180 ? ' timer-warning' : '');
+  }
+
+  // ── Render Question ────────────────────────────────────────
+  function renderQuestion() {
+    const q    = questions[currentQ];
+    const pct  = ((currentQ) / questions.length * 100).toFixed(0);
+    const opts = [
+      { key: 'A', text: q.optionA },
+      { key: 'B', text: q.optionB },
+      { key: 'C', text: q.optionC },
+      { key: 'D', text: q.optionD },
+    ];
+
+    // Question navigator dots
+    const navDots = questions.map((_, i) => {
+      let cls = 'qnav-dot';
+      if (i === currentQ)        cls += ' current';
+      else if (answers[i])       cls += ' answered';
+      return `<div class="${cls}" onclick="goToQ(${i})" title="Question ${i+1}">${i+1}</div>`;
+    }).join('');
+
+    document.getElementById('testRoot').innerHTML = `
+      <div class="test-wrapper">
+
+        <!-- Test Header -->
+        <div class="test-header">
+          <div class="th-left">
+            <div class="th-course">${testCourse.courseName}</div>
+            <div class="th-progress-wrap">
+              <div class="th-progress-bar" style="width:${pct}%"></div>
+            </div>
+            <div class="th-count text-xs text-muted">
+              ${Object.keys(answers).length} / ${questions.length} answered
+            </div>
+          </div>
+          <div class="th-center">
+            <div class="timer-display" id="timerDisplay">00:00</div>
+          </div>
+          <div class="th-right">
+            <button class="btn btn-danger btn-sm" onclick="confirmSubmit()">
+              Submit Test
+            </button>
+          </div>
+        </div>
+
+        <!-- Question Navigator -->
+        <div class="qnav-wrap">
+          <div class="qnav-dots">${navDots}</div>
+        </div>
+
+        <!-- Question Card -->
+        <div class="question-card">
+          <div class="qc-num">Question ${currentQ + 1} of ${questions.length}</div>
+          <div class="qc-text">${q.question}</div>
+
+          <div class="options-list" id="optionsList">
+            ${opts.map(o => `
+              <div class="quiz-option ${answers[currentQ] === o.key ? 'selected' : ''}"
+                   onclick="selectAnswer('${o.key}')" data-key="${o.key}">
+                <div class="quiz-letter">${o.key}</div>
+                <div class="quiz-opt-text">${o.text}</div>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Navigation -->
+          <div class="qc-nav">
+            <button class="btn btn-outline" onclick="prevQ()" ${currentQ === 0 ? 'disabled' : ''}>
+              ← Previous
+            </button>
+            <div class="flex gap-8 items-center">
+              ${answers[currentQ]
+                ? `<span class="badge badge-green">✓ Answered</span>`
+                : `<span class="badge badge-amber">Not answered</span>`}
+            </div>
+            ${currentQ < questions.length - 1
+              ? `<button class="btn btn-primary" onclick="nextQ()">Next →</button>`
+              : `<button class="btn btn-success" onclick="confirmSubmit()">Submit ✓</button>`}
+          </div>
+        </div>
+
+      </div>
+    `;
+
+    updateTimerDisplay();
+  }
+
+  // ── Answer Selection ───────────────────────────────────────
+  window.selectAnswer = function(key) {
+    answers[currentQ] = key;
+    document.querySelectorAll('.quiz-option').forEach(el => {
+      el.classList.toggle('selected', el.dataset.key === key);
+      const letter = el.querySelector('.quiz-letter');
+      if (letter) {
+        letter.style.background = el.dataset.key === key ? 'var(--primary)' : '';
+        letter.style.color      = el.dataset.key === key ? '#fff' : '';
+        letter.style.borderColor= el.dataset.key === key ? 'var(--primary)' : '';
+      }
+    });
+    // Update nav dot
+    const dot = document.querySelectorAll('.qnav-dot')[currentQ];
+    if (dot) dot.classList.add('answered');
+  };
+
+  // ── Navigation ─────────────────────────────────────────────
+  window.goToQ  = function(i) { currentQ = i; renderQuestion(); };
+  window.prevQ  = function()  { if (currentQ > 0)                  { currentQ--; renderQuestion(); } };
+  window.nextQ  = function()  { if (currentQ < questions.length-1) { currentQ++; renderQuestion(); } };
+
+  // ── Confirm Submit ─────────────────────────────────────────
+  window.confirmSubmit = function() {
+    const unanswered = questions.length - Object.keys(answers).length;
+    const msg = unanswered > 0
+      ? `You have ${unanswered} unanswered question(s). Submit anyway?`
+      : 'Submit the test now?';
+    if (confirm(msg)) submitTest();
+  };
+
+  // ── Submit Test ────────────────────────────────────────────
+  async function submitTest() {
+    clearInterval(timerInterval);
+    testStarted = false;
+
+    const answered = Object.keys(answers).length;
+    const root     = document.getElementById('testRoot');
+
+    root.innerHTML = `
+      <div class="flex-center" style="padding:48px;">
+        <div class="spinner spinner-dark"></div>
+        <span class="ml-12 text-muted">Submitting your test...</span>
+      </div>`;
+
+    const res = await API.submitTestResult({
+      studentId: session.studentId,
+      courseId:  testCourse.courseId,
+      answers:   JSON.stringify(answers),
+      score:     answered,
+      total:     questions.length,
+    });
+
+    showResults(res, answered);
+  }
+
+  // ── Show Results ───────────────────────────────────────────
+  function showResults(res, answered) {
+    const pct  = Math.round((answered / questions.length) * 100);
+    const g    = Grade.getLetter(pct);
+    const root = document.getElementById('testRoot');
+
+    root.innerHTML = `
+      <div class="result-card">
+        <div class="result-header" style="background:linear-gradient(135deg,${g.color},${g.color}99);">
+          <div class="result-icon">🎉</div>
+          <h2 style="color:#fff;">Test Submitted!</h2>
+          <p style="color:rgba(255,255,255,.8);">${testCourse.courseName}</p>
+        </div>
+        <div class="result-body">
+          <div class="result-grade-circle" style="border-color:${g.color};color:${g.color};">
+            <div class="rgc-letter">${g.letter}</div>
+            <div class="rgc-pct">${pct}%</div>
+          </div>
+          <div class="result-stats">
+            <div class="rs-item">
+              <div class="rs-val">${answered}</div>
+              <div class="rs-lbl">Answered</div>
+            </div>
+            <div class="rs-item">
+              <div class="rs-val">${questions.length - answered}</div>
+              <div class="rs-lbl">Skipped</div>
+            </div>
+            <div class="rs-item">
+              <div class="rs-val">${questions.length}</div>
+              <div class="rs-lbl">Total</div>
+            </div>
+          </div>
+          <div class="progress mt-16" style="height:12px;">
+            <div class="progress-bar" style="width:${pct}%;background:${g.color};"></div>
+          </div>
+          <p class="text-center text-sm text-muted mt-12">
+            Your instructor will review and announce the final scores.
+          </p>
+          <div class="flex-center gap-12 mt-24">
+            <button class="btn btn-outline" onclick="showCourseSelect(${JSON.stringify(courses).replace(/"/g,'&quot;')})">
+              Take Another Test
+            </button>
+            <button class="btn btn-primary" onclick="location.href='student-dashboard.html'">
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Warn before leaving during test ───────────────────────
+  window.addEventListener('beforeunload', (e) => {
+    if (testStarted) {
+      e.preventDefault();
+      e.returnValue = 'Test in progress! Are you sure you want to leave?';
+    }
+  });
+
+})();
+
+function injectTestStyles() {
+  if (document.getElementById('test-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'test-styles';
+  s.textContent = `
+    /* Course Selection Cards */
+    .course-test-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 20px;
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-md);
+      cursor: pointer;
+      transition: var(--trans);
+    }
+    .course-test-card:hover {
+      border-color: var(--primary-light);
+      background: var(--primary-glow);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    .ctc-icon  { font-size: 2rem; flex-shrink: 0; }
+    .ctc-info  { flex: 1; }
+    .ctc-code  { font-size:.72rem; font-weight:700; color:var(--primary-light); text-transform:uppercase; margin-bottom:3px; }
+    .ctc-name  { font-weight:700; font-size:.95rem; color:var(--text); }
+    .ctc-arrow { font-size:1.2rem; color:var(--text-muted); }
+
+    /* Test Intro Card */
+    .test-intro-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 32px;
+      max-width: 640px;
+      margin: 0 auto;
+      box-shadow: var(--shadow-md);
+    }
+    .tic-header { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
+    .tic-icon   { font-size:2.5rem; }
+    .tic-code   { font-size:.75rem; font-weight:700; color:var(--primary-light); text-transform:uppercase; margin-bottom:4px; }
+    .tic-name   { font-size:1.2rem; font-weight:700; margin:0; }
+    .tic-stats  { display:flex; gap:0; background:var(--bg); border-radius:var(--r-md); overflow:hidden; margin-bottom:24px; border:1px solid var(--border); }
+    .tic-stat   { flex:1; text-align:center; padding:16px 8px; border-right:1px solid var(--border); }
+    .tic-stat:last-child { border-right:none; }
+    .tis-val    { font-size:1.6rem; font-weight:800; color:var(--text); }
+    .tis-lbl    { font-size:.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; }
+    .tic-rules  { display:flex; flex-direction:column; gap:8px; }
+    .tic-rule   { display:flex; align-items:center; gap:8px; font-size:.85rem; color:var(--text); padding:8px 12px; background:var(--bg); border-radius:var(--r-sm); }
+
+    /* Test Wrapper */
+    .test-wrapper { max-width:760px; margin:0 auto; }
+
+    /* Test Header */
+    .test-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 14px 20px;
+      margin-bottom: 14px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .th-left    { flex:1; min-width:160px; }
+    .th-course  { font-weight:700; font-size:.82rem; color:var(--text); margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .th-progress-wrap {
+      height: 5px;
+      background: var(--bg);
+      border-radius: var(--r-full);
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .th-progress-bar {
+      height: 100%;
+      background: var(--primary-light);
+      border-radius: var(--r-full);
+      transition: width .4s var(--ease);
+    }
+    .th-center  { flex-shrink:0; }
+    .th-right   { flex-shrink:0; }
+
+    /* Timer */
+    .timer-display {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      background: var(--bg);
+      padding: 6px 16px;
+      border-radius: var(--r-sm);
+      border: 2px solid var(--border);
+      letter-spacing: .05em;
+      min-width: 90px;
+      text-align: center;
+      transition: all .3s;
+    }
+    .timer-warning { color: var(--warning); border-color: var(--warning); background: var(--warning-light); }
+    .timer-danger  { color: var(--danger);  border-color: var(--danger);  background: var(--danger-light); animation: blink .5s infinite; }
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.5;} }
+
+    /* Question Navigator */
+    .qnav-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      overflow-x: auto;
+    }
+    .qnav-dots {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .qnav-dot {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .72rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 2px solid var(--border);
+      background: var(--bg);
+      color: var(--text-muted);
+      transition: var(--trans);
+      flex-shrink: 0;
+    }
+    .qnav-dot:hover   { border-color: var(--primary-light); color: var(--primary-light); }
+    .qnav-dot.current { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .qnav-dot.answered{ border-color: var(--success); background: var(--success-light); color: var(--success-dark); }
+
+    /* Question Card */
+    .question-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 28px;
+      box-shadow: var(--shadow-sm);
+    }
+    .qc-num  { font-size:.75rem; font-weight:700; color:var(--primary-light); text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
+    .qc-text { font-size:1.05rem; font-weight:600; color:var(--text); line-height:1.6; margin-bottom:22px; }
+    .options-list { display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
+    .quiz-opt-text { flex:1; font-size:.9rem; line-height:1.5; }
+    .qc-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    /* Results */
+    .result-card {
+      max-width: 540px;
+      margin: 0 auto;
+      background: var(--bg-card);
+      border-radius: var(--r-xl);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+    }
+    .result-header {
+      padding: 36px 24px 24px;
+      text-align: center;
+    }
+    .result-icon   { font-size: 3rem; margin-bottom: 8px; }
+    .result-body   { padding: 28px 24px; }
+    .result-grade-circle {
+      width: 100px; height: 100px;
+      border-radius: 50%;
+      border: 4px solid;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      margin: 0 auto 24px;
+      background: #fff;
+      box-shadow: var(--shadow-md);
+    }
+    .rgc-letter { font-size: 2rem; font-weight: 800; line-height: 1; }
+    .rgc-pct    { font-size: .8rem; font-weight: 600; opacity: .7; }
+    .result-stats {
+      display: flex;
+      gap: 0;
+      background: var(--bg);
+      border-radius: var(--r-md);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .rs-item     { flex:1; text-align:center; padding:14px 8px; border-right:1px solid var(--border); }
+    .rs-item:last-child { border-right:none; }
+    .rs-val      { font-size:1.4rem; font-weight:800; color:var(--text); }
+    .rs-lbl      { font-size:.72rem; color:var(--text-muted); text-transform:uppercase; }
+
+    .ml-12 { margin-left: 12px; }
+
+    @media (max-width: 600px) {
+      .test-intro-card { padding: 20px; }
+      .question-card   { padding: 18px; }
+      .qc-text         { font-size: .95rem; }
+      .test-header     { flex-direction: column; align-items: flex-start; }
+      .th-center, .th-right { align-self: flex-end; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

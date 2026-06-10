@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lecture Notes – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireInstructor();
+  if (!session) return;
+  renderLayout({ role: 'instructor', activePage: 'notes' });
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header"><h1>📚 Lecture Notes</h1><p>Upload and manage course materials for students.</p></div>
+      <div class="notes-instr-grid">
+        <!-- Upload Form -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">📤 Upload New Note</span></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
+            <div class="form-group">
+              <label class="form-label">Course</label>
+              <select class="form-control" id="noteCourse" onchange="loadNotes()">
+                <option value="">— Select Course —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Topic Title</label>
+              <input type="text" id="noteTitle" class="form-control" placeholder="e.g. Chapter 3: Horizontal Alignment" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Resource URL</label>
+              <input type="url" id="noteUrl" class="form-control" placeholder="https://drive.google.com/..." />
+              <span class="form-hint">Google Drive, Dropbox, OneDrive, or any direct link.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">File Type</label>
+              <select class="form-control" id="noteType">
+                <option value="PDF">PDF</option>
+                <option value="Word">Word Document</option>
+                <option value="PPT">PowerPoint</option>
+                <option value="Video">Video</option>
+                <option value="Link">Web Link</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-full btn-lg" id="uploadNoteBtn" onclick="doUploadNote()">
+              📤 Upload Note
+            </button>
+          </div>
+        </div>
+        <!-- Notes List -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" id="notesListTitle">📋 Uploaded Notes</span>
+            <span class="badge badge-blue" id="notesCount">0</span>
+          </div>
+          <div style="padding:10px 16px;border-bottom:1px solid var(--border);">
+            <div class="input-wrap">
+              <span class="input-prefix">🔍</span>
+              <input type="text" id="noteSearch" class="form-control" placeholder="Search notes..." oninput="filterNotes()" />
+            </div>
+          </div>
+          <div id="notesList" style="max-height:500px;overflow-y:auto;">
+            <div class="empty-state" style="padding:40px 20px;">
+              <div class="empty-icon">📚</div>
+              <h3>Select a course</h3>
+              <p>Choose a course to view uploaded notes.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  injectNotesInstrStyles();
+  let allCourses = [];
+  let allNotes   = [];
+
+  const coursesRes = await API.getCourses();
+  allCourses = coursesRes.success ? coursesRes.courses : [];
+  const sel = document.getElementById('noteCourse');
+  allCourses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.courseId; opt.textContent = c.courseName;
+    sel.appendChild(opt);
+  });
+
+  window.loadNotes = async function() {
+    const courseId = document.getElementById('noteCourse').value;
+    if (!courseId) return;
+    const course = allCourses.find(c => c.courseId === courseId);
+    document.getElementById('notesListTitle').textContent = `📋 ${course?.courseName || 'Notes'}`;
+    const nl = document.getElementById('notesList');
+    nl.innerHTML = `<div class="flex-center" style="padding:32px;"><div class="spinner spinner-dark"></div></div>`;
+    const res = await API.getLectureNotes(courseId);
+    allNotes = res.success ? (res.notes || []) : [];
+    document.getElementById('notesCount').textContent = allNotes.length;
+    renderNotes(allNotes);
+  };
+
+  window.filterNotes = function() {
+    const q = document.getElementById('noteSearch').value.toLowerCase();
+    renderNotes(allNotes.filter(n => (n.Topic_Title||n.topicTitle||'').toLowerCase().includes(q)));
+  };
+
+  function renderNotes(notes) {
+    const nl = document.getElementById('notesList');
+    if (!notes.length) {
+      nl.innerHTML = `<div class="empty-state" style="padding:32px 20px;"><div class="empty-icon">📭</div><h3>No notes yet</h3><p>Upload your first note using the form.</p></div>`;
+      return;
+    }
+    nl.innerHTML = notes.map((n, i) => {
+      const title = n.Topic_Title || n.topicTitle || 'Untitled';
+      const url   = n.Resource_URL || n.resourceUrl || '#';
+      const type  = n.FileType || n.fileType || 'File';
+      const date  = n.UploadedAt || n.uploadedAt || '';
+      return `
+        <div class="note-instr-row">
+          <div class="nir-icon">📄</div>
+          <div class="nir-info">
+            <div class="fw-600 text-sm">${title}</div>
+            <div class="flex gap-8 mt-4">
+              <span class="badge badge-blue" style="font-size:.65rem;">${type}</span>
+              ${date ? `<span class="text-xs text-muted">${DateUtil.format(date)}</span>` : ''}
+            </div>
+          </div>
+          <div class="nir-actions">
+            <a href="${url}" target="_blank" class="btn btn-outline btn-sm">🔗 Open</a>
+            <button class="btn btn-danger btn-sm btn-icon" onclick="doDeleteNote('${n.noteId||i}','${title.replace(/'/g,"\\'")}')">🗑</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  window.doUploadNote = async function() {
+    const courseId = document.getElementById('noteCourse').value;
+    const title    = document.getElementById('noteTitle').value.trim();
+    const url      = document.getElementById('noteUrl').value.trim();
+    const type     = document.getElementById('noteType').value;
+    if (!courseId) { Toast.error('Select a course.'); return; }
+    if (!title)    { Toast.error('Enter a topic title.'); return; }
+    if (!url)      { Toast.error('Enter a resource URL.'); return; }
+    const btn = document.getElementById('uploadNoteBtn');
+    Loader.show(btn, 'Uploading...');
+    const res = await API.uploadLectureNote({ courseId, title, url, fileType: type });
+    Loader.hide(btn);
+    if (res.success) {
+      Toast.success('Note uploaded!');
+      document.getElementById('noteTitle').value = '';
+      document.getElementById('noteUrl').value   = '';
+      await loadNotes();
+    } else {
+      Toast.error(res.message || 'Upload failed.');
+    }
+  };
+
+  window.doDeleteNote = async function(noteId, title) {
+    if (!confirm(`Delete "${title}"?`)) return;
+    const res = await API.deleteLectureNote(noteId);
+    if (res.success) { Toast.success('Note deleted.'); await loadNotes(); }
+    else Toast.error(res.message || 'Delete failed.');
+  };
+})();
+
+function injectNotesInstrStyles() {
+  if (document.getElementById('notes-instr-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'notes-instr-styles';
+  s.textContent = `
+    .notes-instr-grid { display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:flex-start; }
+    .note-instr-row { display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);transition:var(--trans); }
+    .note-instr-row:last-child { border-bottom:none; }
+    .note-instr-row:hover { background:var(--bg-hover); }
+    .nir-icon  { font-size:1.5rem;flex-shrink:0; }
+    .nir-info  { flex:1;min-width:0; }
+    .nir-actions { display:flex;gap:6px;flex-shrink:0; }
+    @media (max-width:900px) { .notes-instr-grid { grid-template-columns:1fr; } }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

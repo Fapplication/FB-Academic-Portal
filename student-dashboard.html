@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireStudent();
+  if (!session) return;
+
+  // Render layout with skeleton
+  renderLayout({ role: 'student', activePage: 'dashboard' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <!-- Welcome Banner -->
+      <div class="welcome-banner">
+        <div class="wb-left">
+          <div class="wb-greeting" id="greetingText">Good morning</div>
+          <h1 class="wb-name" id="welcomeName">Loading...</h1>
+          <p class="wb-sub">Here is your academic overview for this semester.</p>
+        </div>
+        <div class="wb-right">
+          <div class="wb-avatar" id="wbAvatar">U</div>
+        </div>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid" id="statsGrid">
+        ${skeletonGrid(4)}
+      </div>
+
+      <!-- Main Grid -->
+      <div class="dash-grid">
+
+        <!-- Courses & Marks -->
+        <div class="card dash-main">
+          <div class="card-header">
+            <span class="card-title">📊 Course Performance</span>
+            <button class="btn btn-outline btn-sm" onclick="location.href='student-marks.html'">
+              View All →
+            </button>
+          </div>
+          <div class="card-body" id="coursePerf">
+            <div class="skeleton skel-box"></div>
+            <div class="skeleton skel-box mt-12"></div>
+          </div>
+        </div>
+
+        <!-- Side widgets -->
+        <div class="dash-side">
+
+          <!-- Quick Actions -->
+          <div class="card mb-16">
+            <div class="card-header">
+              <span class="card-title">⚡ Quick Actions</span>
+            </div>
+            <div class="card-body p-16">
+              <div class="quick-actions">
+                <button class="quick-btn" onclick="location.href='student-marks.html'">
+                  <span class="qb-icon">📊</span>My Marks
+                </button>
+                <button class="quick-btn" onclick="location.href='student-tests.html'">
+                  <span class="qb-icon">📝</span>Take Test
+                </button>
+                <button class="quick-btn" onclick="location.href='student-notes.html'">
+                  <span class="qb-icon">📚</span>Notes
+                </button>
+                <button class="quick-btn" onclick="location.href='student-chatbot.html'">
+                  <span class="qb-icon">🤖</span>Chatbot
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Notices -->
+          <div class="card mb-16">
+            <div class="card-header">
+              <span class="card-title">📣 Latest Notice</span>
+              <button class="btn btn-ghost btn-sm" onclick="location.href='student-notifications.html'">All</button>
+            </div>
+            <div class="card-body p-16" id="latestNotice">
+              <div class="skeleton skel-line"></div>
+              <div class="skeleton skel-line" style="width:80%"></div>
+            </div>
+          </div>
+
+          <!-- Telegram Bot -->
+          <div class="card tg-card">
+            <div class="card-body p-16">
+              <div class="tg-card-inner">
+                <div class="tg-card-icon">✈️</div>
+                <div>
+                  <div class="fw-700 text-sm">Get updates on Telegram</div>
+                  <div class="text-xs text-muted mt-4">Join @FBResultPortalBot for instant notifications</div>
+                </div>
+              </div>
+              <a href="https://t.me/FBResultPortalBot" target="_blank"
+                 class="btn btn-sm mt-12 w-full"
+                 style="background:#0088cc;color:#fff;justify-content:center;">
+                Join Bot
+              </a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Inject dashboard styles
+  injectDashStyles();
+
+  // Set greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  document.getElementById('greetingText').textContent = greeting + ',';
+  document.getElementById('welcomeName').textContent  = session.name.split(' ')[0] + ' 👋';
+  document.getElementById('wbAvatar').textContent     = initials(session.name);
+
+  // Load data in parallel
+  const [marksRes, noticesRes, coursesRes] = await Promise.all([
+    API.getMarks(session.studentId),
+    API.getNotices(),
+    API.getCourses()
+  ]);
+
+  // ── Render Stats ──────────────────────────────────────────
+  renderStats(marksRes);
+
+  // ── Render Course Performance ─────────────────────────────
+  renderCoursePerf(marksRes, coursesRes);
+
+  // ── Render Latest Notice ──────────────────────────────────
+  renderLatestNotice(noticesRes);
+
+  // ─────────────────────────────────────────────────────────
+  function renderStats(marksRes) {
+    const marks   = marksRes.success ? marksRes.marks : [];
+    const courses = marks.length;
+    const totals  = marks.map(m => parseFloat(m.weightedTotal || 0));
+    const avg     = totals.length ? (totals.reduce((a,b)=>a+b,0)/totals.length).toFixed(1) : '—';
+    const passing = totals.filter(t => t >= 50).length;
+    const complaints = marks.filter(m => m.status === 'Complained').length;
+
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card blue">
+        <div class="stat-icon">📚</div>
+        <div class="stat-value">${courses}</div>
+        <div class="stat-label">Enrolled Courses</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-icon">⭐</div>
+        <div class="stat-value">${avg}</div>
+        <div class="stat-label">Average Score</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-icon">✅</div>
+        <div class="stat-value">${passing}/${courses}</div>
+        <div class="stat-label">Courses Passing</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-icon">📬</div>
+        <div class="stat-value">${complaints}</div>
+        <div class="stat-label">Pending Complaints</div>
+      </div>
+    `;
+  }
+
+  function renderCoursePerf(marksRes, coursesRes) {
+    const cp = document.getElementById('coursePerf');
+    if (!marksRes.success || !marksRes.marks || !marksRes.marks.length) {
+      cp.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <h3>No marks yet</h3>
+          <p>Your marks will appear here once your instructor uploads them.</p>
+        </div>`;
+      return;
+    }
+
+    cp.innerHTML = marksRes.marks.map(m => {
+      const total = parseFloat(m.weightedTotal || 0);
+      const g     = Grade.getLetter(total);
+      const pct   = Math.min(total, 100);
+
+      // Assessment breakdown
+      const breakdown = (m.assessments || []).map(a => `
+        <div class="assess-chip">
+          <span class="assess-name">${a.name}</span>
+          <span class="assess-score">${a.score !== null && a.score !== '' ? a.score + '/' + a.maxScore : '—'}</span>
+          <span class="assess-weight text-xs text-muted">(${a.weight}%)</span>
+        </div>
+      `).join('');
+
+      return `
+        <div class="course-perf-item">
+          <div class="flex-between mb-8">
+            <div>
+              <div class="fw-700 text-sm">${m.courseName}</div>
+              <div class="text-xs text-muted">${m.courseCode || ''}</div>
+            </div>
+            <div class="text-right">
+              <span class="grade-pill" style="background:${g.bg};color:${g.color};">
+                ${g.letter}
+              </span>
+              <div class="fw-800 text-sm mt-4" style="color:${g.color};">${total}%</div>
+            </div>
+          </div>
+          <div class="progress mb-10">
+            <div class="progress-bar" style="width:${pct}%;background:${g.color};"></div>
+          </div>
+          ${breakdown ? `<div class="assess-chips">${breakdown}</div>` : ''}
+          <div class="flex gap-8 mt-10">
+            <button class="btn btn-outline btn-sm" onclick="location.href='student-marks.html'">
+              View Details
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('<div class="course-divider"></div>');
+  }
+
+  function renderLatestNotice(noticesRes) {
+    const ln = document.getElementById('latestNotice');
+    if (!noticesRes.success || !noticesRes.notices || !noticesRes.notices.length) {
+      ln.innerHTML = `<p class="text-xs text-muted text-center" style="padding:8px 0;">No notices yet.</p>`;
+      return;
+    }
+    const latest = noticesRes.notices[noticesRes.notices.length - 1];
+    ln.innerHTML = `
+      <div class="notice-dot"></div>
+      <div class="fw-600 text-sm mb-4">${latest.Title || 'Notice'}</div>
+      <p class="text-xs" style="line-height:1.6;color:var(--text);">${(latest.Message||'').substring(0,120)}${(latest.Message||'').length > 120 ? '...' : ''}</p>
+      <div class="text-xs text-muted mt-6">${DateUtil.format(latest.Timestamp)}</div>
+    `;
+  }
+
+})();
+
+// ── Dashboard Styles ──────────────────────────────────────────
+function injectDashStyles() {
+  if (document.getElementById('dash-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'dash-styles';
+  s.textContent = `
+    /* Welcome Banner */
+    .welcome-banner {
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 60%, #0ea5e9 100%);
+      border-radius: var(--r-lg);
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(30,64,175,.3);
+    }
+    .welcome-banner::before {
+      content: '';
+      position: absolute;
+      top: -40%; right: -10%;
+      width: 280px; height: 280px;
+      background: rgba(255,255,255,.07);
+      border-radius: 50%;
+    }
+    .welcome-banner::after {
+      content: '';
+      position: absolute;
+      bottom: -50%; left: 30%;
+      width: 200px; height: 200px;
+      background: rgba(255,255,255,.05);
+      border-radius: 50%;
+    }
+    .wb-left { position: relative; z-index: 1; }
+    .wb-greeting { color: rgba(255,255,255,.75); font-size: .88rem; font-weight: 500; margin-bottom: 4px; }
+    .wb-name { color: #fff; font-size: clamp(1.3rem,2.5vw,1.9rem); font-weight: 800; margin-bottom: 6px; }
+    .wb-sub  { color: rgba(255,255,255,.65); font-size: .84rem; }
+    .wb-right { position: relative; z-index: 1; }
+    .wb-avatar {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.2);
+      border: 3px solid rgba(255,255,255,.3);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800; font-size: 1.4rem;
+      backdrop-filter: blur(10px);
+    }
+
+    /* Dashboard grid */
+    .dash-grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .dash-main { }
+    .dash-side { display: flex; flex-direction: column; }
+
+    /* Course performance */
+    .course-perf-item { padding: 18px 0; }
+    .course-divider   { height: 1px; background: var(--border); margin: 0; }
+
+    /* Grade pill */
+    .grade-pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: .75rem;
+      font-weight: 800;
+    }
+
+    /* Assessment chips */
+    .assess-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .assess-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: .74rem;
+    }
+    .assess-name   { font-weight: 600; color: var(--text); }
+    .assess-score  { color: var(--primary-light); font-weight: 700; }
+
+    /* Telegram card */
+    .tg-card { background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-color: #bae6fd; }
+    .tg-card-inner { display: flex; align-items: center; gap: 12px; }
+    .tg-card-icon  { font-size: 1.8rem; }
+
+    /* Notice dot */
+    .notice-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      margin-bottom: 8px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.5; transform:scale(1.3); }
+    }
+
+    @media (max-width: 1024px) {
+      .dash-grid { grid-template-columns: 1fr; }
+      .dash-side { flex-direction: row; flex-wrap: wrap; gap: 16px; }
+      .dash-side .card { flex: 1; min-width: 240px; }
+    }
+    @media (max-width: 600px) {
+      .welcome-banner { padding: 20px; }
+      .wb-avatar { width: 48px; height: 48px; font-size: 1rem; }
+      .dash-side { flex-direction: column; }
+      .dash-side .card { min-width: unset; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

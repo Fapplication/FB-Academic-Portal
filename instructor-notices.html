@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Send Notice – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireInstructor();
+  if (!session) return;
+  renderLayout({ role: 'instructor', activePage: 'notices' });
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header"><h1>📣 Send Notice</h1><p>Broadcast announcements to all students on the portal and Telegram bot.</p></div>
+      <div class="notices-grid">
+        <!-- Compose -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">✍️ Compose Notice</span></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
+            <div class="form-group">
+              <label class="form-label">Notice Title</label>
+              <input type="text" id="noticeTitle" class="form-control" placeholder="e.g. Mid Exam Schedule" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <select class="form-control" id="noticeCategory">
+                <option value="General">📢 General</option>
+                <option value="Exam">📝 Exam</option>
+                <option value="Assignment">📋 Assignment</option>
+                <option value="Holiday">🎉 Holiday</option>
+                <option value="Result">📊 Result</option>
+                <option value="Urgent">🚨 Urgent</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Message</label>
+              <textarea class="form-control" id="noticeMsg" rows="7" placeholder="Write your announcement here..."></textarea>
+              <div class="flex-between mt-4">
+                <span class="form-hint">Be clear and specific.</span>
+                <span class="text-xs text-muted" id="charCount">0 / 1000</span>
+              </div>
+            </div>
+            <!-- Preview -->
+            <div class="notice-preview" id="noticePreview" style="display:none;">
+              <div class="np-label">Preview</div>
+              <div class="np-category" id="npCategory"></div>
+              <div class="np-title" id="npTitle"></div>
+              <div class="np-msg" id="npMsg"></div>
+            </div>
+            <div class="flex gap-10">
+              <button class="btn btn-outline flex-1" onclick="togglePreview()">👁 Preview</button>
+              <button class="btn btn-primary flex-1 btn-lg" id="sendNoticeBtn" onclick="doSendNotice()">
+                📣 Send to All Students
+              </button>
+            </div>
+          </div>
+        </div>
+        <!-- History -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">📋 Notice History</span>
+            <button class="btn btn-outline btn-sm" onclick="loadHistory()">🔄</button>
+          </div>
+          <div id="noticeHistory" style="max-height:560px;overflow-y:auto;">
+            <div class="flex-center" style="padding:32px;"><div class="spinner spinner-dark"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  injectNoticesStyles();
+
+  // Live char count
+  document.getElementById('noticeMsg').addEventListener('input', function() {
+    document.getElementById('charCount').textContent = `${this.value.length} / 1000`;
+    if (document.getElementById('noticePreview').style.display !== 'none') updatePreview();
+  });
+  document.getElementById('noticeTitle').addEventListener('input', () => {
+    if (document.getElementById('noticePreview').style.display !== 'none') updatePreview();
+  });
+
+  await loadHistory();
+
+  function updatePreview() {
+    const title    = document.getElementById('noticeTitle').value;
+    const msg      = document.getElementById('noticeMsg').value;
+    const category = document.getElementById('noticeCategory').value;
+    document.getElementById('npCategory').textContent = category;
+    document.getElementById('npTitle').textContent    = title || '(No title)';
+    document.getElementById('npMsg').textContent      = msg   || '(No message)';
+  }
+
+  window.togglePreview = function() {
+    const prev = document.getElementById('noticePreview');
+    if (prev.style.display === 'none') {
+      updatePreview();
+      prev.style.display = 'block';
+    } else {
+      prev.style.display = 'none';
+    }
+  };
+
+  window.doSendNotice = async function() {
+    const title    = document.getElementById('noticeTitle').value.trim();
+    const message  = document.getElementById('noticeMsg').value.trim();
+    const category = document.getElementById('noticeCategory').value;
+    if (!title)   { Toast.error('Enter a notice title.'); return; }
+    if (!message) { Toast.error('Write the notice message.'); return; }
+    if (message.length > 1000) { Toast.error('Message too long (max 1000 chars).'); return; }
+    const btn = document.getElementById('sendNoticeBtn');
+    Loader.show(btn, 'Sending...');
+    const res = await API.sendNotice({ title, message, category });
+    Loader.hide(btn);
+    if (res.success) {
+      Toast.success('Notice sent to all students!');
+      document.getElementById('noticeTitle').value = '';
+      document.getElementById('noticeMsg').value   = '';
+      document.getElementById('charCount').textContent = '0 / 1000';
+      document.getElementById('noticePreview').style.display = 'none';
+      await loadHistory();
+    } else {
+      Toast.error(res.message || 'Failed to send notice.');
+    }
+  };
+
+  window.loadHistory = async function() {
+    const nh  = document.getElementById('noticeHistory');
+    nh.innerHTML = `<div class="flex-center" style="padding:32px;"><div class="spinner spinner-dark"></div></div>`;
+    const res = await API.getNotices();
+    const notices = res.success ? [...(res.notices||[])].reverse() : [];
+    if (!notices.length) {
+      nh.innerHTML = `<div class="empty-state" style="padding:32px 20px;"><div class="empty-icon">📭</div><h3>No notices yet</h3></div>`;
+      return;
+    }
+    nh.innerHTML = notices.map(n => {
+      const title    = n.Title    || n.title    || 'Notice';
+      const msg      = n.Message  || n.message  || '';
+      const ts       = n.Timestamp|| n.timestamp|| '';
+      const category = n.Category || n.category || 'General';
+      const catColors= { General:'badge-blue', Exam:'badge-red', Assignment:'badge-amber', Holiday:'badge-green', Result:'badge-cyan', Urgent:'badge-red' };
+      return `
+        <div class="notice-hist-item">
+          <div class="nhi-header">
+            <div class="flex items-center gap-8">
+              <span class="badge ${catColors[category]||'badge-neutral'}" style="font-size:.65rem;">${category}</span>
+              <span class="fw-700 text-sm">${title}</span>
+            </div>
+            <span class="text-xs text-muted">${DateUtil.formatFull(ts)}</span>
+          </div>
+          <div class="nhi-msg">${msg.substring(0,150)}${msg.length>150?'...':''}</div>
+        </div>`;
+    }).join('');
+  };
+})();
+
+function injectNoticesStyles() {
+  if (document.getElementById('notices-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'notices-styles';
+  s.textContent = `
+    .notices-grid { display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:flex-start; }
+    .notice-preview { background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;animation:fadeUp .2s ease; }
+    .np-label    { font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px; }
+    .np-category { font-size:.72rem;font-weight:700;color:var(--primary);margin-bottom:4px; }
+    .np-title    { font-weight:700;font-size:.95rem;margin-bottom:6px; }
+    .np-msg      { font-size:.84rem;color:var(--text);line-height:1.6;white-space:pre-wrap; }
+    .notice-hist-item { padding:14px 18px;border-bottom:1px solid var(--border);transition:var(--trans); }
+    .notice-hist-item:last-child { border-bottom:none; }
+    .notice-hist-item:hover { background:var(--bg-hover); }
+    .nhi-header { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap; }
+    .nhi-msg    { font-size:.82rem;color:var(--text-muted);line-height:1.5; }
+    .flex-1 { flex:1; }
+    @media (max-width:900px) { .notices-grid { grid-template-columns:1fr; } }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

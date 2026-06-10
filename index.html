@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Civil Engineering Student Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/auth.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="auth-body">
+
+<div class="auth-bg">
+  <div class="bg-orb orb1"></div>
+  <div class="bg-orb orb2"></div>
+  <div class="bg-orb orb3"></div>
+  <div class="bg-grid"></div>
+</div>
+
+<div class="auth-split">
+
+  <!-- LEFT HERO -->
+  <div class="auth-hero">
+    <div class="auth-hero-inner">
+      <div class="hero-badge"><span>🏛️</span> Department of Civil Engineering</div>
+      <h1 class="hero-title">Your Academic<br><span class="gradient-text">Portal</span></h1>
+      <p class="hero-desc">Access grades, take online tests, download lecture notes, submit complaints, and chat with your instructor — all in one place.</p>
+      <div class="hero-stats">
+        <div class="hero-stat"><div class="hs-value">∞</div><div class="hs-label">Resources</div></div>
+        <div class="hs-divider"></div>
+        <div class="hero-stat"><div class="hs-value">24/7</div><div class="hs-label">Access</div></div>
+        <div class="hs-divider"></div>
+        <div class="hero-stat"><div class="hs-value">100%</div><div class="hs-label">Online</div></div>
+      </div>
+      <div class="hero-features">
+        <div class="hf-row">
+          <div class="hf-item"><div class="hf-icon">📊</div><div class="hf-text"><strong>View Marks</strong><span>Accept or raise complaints</span></div></div>
+          <div class="hf-item"><div class="hf-icon">📝</div><div class="hf-text"><strong>Online Tests</strong><span>Timed assessments</span></div></div>
+        </div>
+        <div class="hf-row">
+          <div class="hf-item"><div class="hf-icon">📚</div><div class="hf-text"><strong>Lecture Notes</strong><span>Download anytime</span></div></div>
+          <div class="hf-item"><div class="hf-icon">🤖</div><div class="hf-text"><strong>AI Chatbot</strong><span>Instant support</span></div></div>
+        </div>
+      </div>
+      <a href="https://t.me/FBResultPortalBot" target="_blank" class="tg-join-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.018 9.51c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.26 14.4l-2.946-.924c-.64-.203-.654-.64.136-.948l11.5-4.433c.537-.194 1.006.131.612.153z"/></svg>
+        Join @FBResultPortalBot on Telegram
+      </a>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="auth-panel">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <div class="auth-logo-icon">🏛️</div>
+        <div>
+          <div class="auth-logo-title">Civil Eng. Portal</div>
+          <div class="auth-logo-sub">Academic Management System</div>
+        </div>
+      </div>
+
+      <div class="role-toggle">
+        <button class="role-btn active" onclick="switchRole('student',this)">🎓 Student</button>
+        <button class="role-btn" onclick="switchRole('instructor',this)">👨‍🏫 Instructor</button>
+      </div>
+
+      <!-- STUDENT -->
+      <div id="studentSection">
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="tabLogin" onclick="showTab('login')">Sign In</button>
+          <button class="auth-tab" id="tabRegister" onclick="showTab('register')">Register</button>
+        </div>
+
+        <!-- LOGIN -->
+        <div id="loginForm" class="slide-form active">
+          <div class="form-group">
+            <label class="form-label">Student ID</label>
+            <div class="input-wrap">
+              <span class="input-prefix">🎓</span>
+              <input type="text" id="loginId" class="form-control" placeholder="e.g. ETS0123/14" onkeydown="if(event.key==='Enter')doStudentLogin()" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <div class="input-wrap">
+              <span class="input-prefix">🔒</span>
+              <input type="password" id="loginPass" class="form-control" placeholder="••••••••" onkeydown="if(event.key==='Enter')doStudentLogin()" />
+              <button class="eye-btn" type="button" onclick="togglePass('loginPass',this)">👁</button>
+            </div>
+          </div>
+          <div class="form-row-between">
+            <label class="check-label"><input type="checkbox" id="rememberMe" /><span>Remember me</span></label>
+            <button class="link-btn" onclick="showForgot()">Forgot password?</button>
+          </div>
+          <button class="btn btn-primary btn-full btn-lg mt-20" id="loginBtn" onclick="doStudentLogin()">Sign In →</button>
+          <div class="auth-divider"><span>or</span></div>
+          <p class="auth-switch-text">New student? <button class="link-btn" onclick="showTab('register')">Create account</button></p>
+        </div>
+
+        <!-- REGISTER -->
+        <div id="registerForm" class="slide-form">
+          <div id="regS1" class="reg-step active">
+            <div class="step-header">
+              <div class="step-badge">Step 1 of 2</div>
+              <p class="step-desc">Enter your pre-authorized Student ID to begin.</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Student ID</label>
+              <div class="input-wrap">
+                <span class="input-prefix">🎓</span>
+                <input type="text" id="regId" class="form-control" placeholder="e.g. ETS0123/14" />
+              </div>
+            </div>
+            <button class="btn btn-primary btn-full" id="checkIdBtn" onclick="doCheckID()">Verify ID →</button>
+          </div>
+          <div id="regS2" class="reg-step">
+            <div class="step-header">
+              <div class="step-badge">Step 2 of 2</div>
+              <p class="step-desc">Welcome, <strong id="regWelcomeName"></strong>! Set your credentials.</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <div class="input-wrap">
+                <span class="input-prefix">🔒</span>
+                <input type="password" id="regPass" class="form-control" placeholder="Min. 8 characters" oninput="strengthCheck()" />
+                <button class="eye-btn" type="button" onclick="togglePass('regPass',this)">👁</button>
+              </div>
+              <div id="strengthBarWrap" style="margin-top:6px;background:var(--border);border-radius:4px;height:4px;overflow:hidden;"><div id="strengthBar" style="height:4px;width:0;border-radius:4px;transition:.3s;"></div></div>
+              <div id="strengthText" style="font-size:.75rem;margin-top:3px;"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Confirm Password</label>
+              <div class="input-wrap">
+                <span class="input-prefix">🔒</span>
+                <input type="password" id="regPassConfirm" class="form-control" placeholder="Repeat password" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Telegram Username <span class="label-hint">(for notifications & password reset)</span></label>
+              <div class="input-wrap">
+                <span class="input-prefix">✈️</span>
+                <input type="text" id="regTelegram" class="form-control" placeholder="username (without @)" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email <span class="label-hint">(optional backup)</span></label>
+              <div class="input-wrap">
+                <span class="input-prefix">📧</span>
+                <input type="email" id="regEmail" class="form-control" placeholder="your@email.com" />
+              </div>
+            </div>
+            <button class="btn btn-success btn-full btn-lg" id="regBtn" onclick="doRegister()">✓ Create Account</button>
+            <button class="btn btn-ghost btn-full btn-sm mt-8" onclick="regGoStep(1)">← Back</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- INSTRUCTOR -->
+      <div id="instructorSection" style="display:none;">
+        <div class="slide-form active" style="margin-top:12px;">
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <div class="input-wrap">
+              <span class="input-prefix">👨‍🏫</span>
+              <input type="text" id="instrUser" class="form-control" placeholder="admin" onkeydown="if(event.key==='Enter')doInstructorLogin()" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <div class="input-wrap">
+              <span class="input-prefix">🔒</span>
+              <input type="password" id="instrPass" class="form-control" placeholder="••••••••" onkeydown="if(event.key==='Enter')doInstructorLogin()" />
+              <button class="eye-btn" type="button" onclick="togglePass('instrPass',this)">👁</button>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-full btn-lg mt-20" id="instrLoginBtn" onclick="doInstructorLogin()">Login as Instructor →</button>
+        </div>
+      </div>
+
+      <!-- FORGOT PASSWORD -->
+      <div id="forgotSection" style="display:none;">
+        <div id="fgS1" class="reg-step active">
+          <div class="step-header">
+            <div class="step-badge forgot-badge">🔑 Reset Password</div>
+            <p class="step-desc">Enter your Student ID — we'll send an OTP via Telegram or Email.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Student ID</label>
+            <div class="input-wrap">
+              <span class="input-prefix">🎓</span>
+              <input type="text" id="fgId" class="form-control" placeholder="e.g. ETS0123/14" />
+            </div>
+          </div>
+          <button class="btn btn-primary btn-full" id="fgSendBtn" onclick="doForgotSend()">Send OTP →</button>
+          <button class="btn btn-ghost btn-full btn-sm mt-8" onclick="showLogin()">← Back to Login</button>
+        </div>
+        <div id="fgS2" class="reg-step">
+          <div class="step-header">
+            <div class="step-badge">Step 2 of 3</div>
+            <p class="step-desc" id="fgSentMsg">OTP sent. Enter the 6-digit code below.</p>
+          </div>
+          <div class="otp-group" id="fgOtpBoxes">
+            <input class="otp-box" maxlength="1" type="text" oninput="otpNav(this,0,'fg')" onkeydown="otpBack(event,this,0,'fg')" />
+            <input class="otp-box" maxlength="1" type="text" oninput="otpNav(this,1,'fg')" onkeydown="otpBack(event,this,1,'fg')" />
+            <input class="otp-box" maxlength="1" type="text" oninput="otpNav(this,2,'fg')" onkeydown="otpBack(event,this,2,'fg')" />
+            <input class="otp-box" maxlength="1" type="text" oninput="otpNav(this,3,'fg')" onkeydown="otpBack(event,this,3,'fg')" />
+            <input class="otp-box" maxlength="1" type="text" oninput="otpNav(this,4,'fg')" onkeydown="otpBack(event,this,4,'fg')" />
+            <input class="otp-box" maxlength="1" type="text" oninput="otpNav(this,5,'fg')" onkeydown="otpBack(event,this,5,'fg')" />
+          </div>
+          <div class="otp-timer-row">
+            <span id="fgTimerMsg">Resend in <strong id="fgTimer">60</strong>s</span>
+            <button class="link-btn" id="fgResendBtn" style="display:none;" onclick="doForgotSend()">Resend OTP</button>
+          </div>
+          <button class="btn btn-primary btn-full mt-16" id="fgVerifyBtn" onclick="doForgotVerify()">Verify OTP</button>
+          <button class="btn btn-ghost btn-full btn-sm mt-8" onclick="fgGoStep(1)">← Back</button>
+        </div>
+        <div id="fgS3" class="reg-step">
+          <div class="step-header">
+            <div class="step-badge">Step 3 of 3</div>
+            <p class="step-desc">Set your new password.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Password</label>
+            <div class="input-wrap">
+              <span class="input-prefix">🔒</span>
+              <input type="password" id="newPass" class="form-control" placeholder="Min. 8 characters" />
+              <button class="eye-btn" type="button" onclick="togglePass('newPass',this)">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password</label>
+            <div class="input-wrap">
+              <span class="input-prefix">🔒</span>
+              <input type="password" id="newPassConfirm" class="form-control" placeholder="Repeat password" />
+            </div>
+          </div>
+          <button class="btn btn-success btn-full btn-lg" id="resetBtn" onclick="doResetPass()">✓ Reset Password</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+let _regId='', _regName='', _fgId='', _fgOtp='', _fgTimer=null;
+
+window.addEventListener('load', () => {
+  const s = Session.get();
+  if (s?.role==='student')    location.href='student-dashboard.html';
+  if (s?.role==='instructor') location.href='instructor-dashboard.html';
+  const saved = localStorage.getItem('savedId');
+  if (saved) document.getElementById('loginId').value = saved;
+});
+
+function switchRole(role, btn) {
+  document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('studentSection').style.display    = role==='student'    ? '' : 'none';
+  document.getElementById('instructorSection').style.display = role==='instructor' ? '' : 'none';
+  document.getElementById('forgotSection').style.display     = 'none';
+}
+
+function showTab(tab) {
+  ['login','register'].forEach(t => {
+    document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active', t===tab);
+    document.getElementById(t+'Form').classList.toggle('active', t===tab);
+  });
+  document.getElementById('forgotSection').style.display  = 'none';
+  document.getElementById('studentSection').style.display = '';
+}
+
+function togglePass(id, btn) {
+  const el = document.getElementById(id);
+  el.type  = el.type==='password' ? 'text' : 'password';
+  btn.textContent = el.type==='password' ? '👁' : '🙈';
+}
+
+function strengthCheck() {
+  const v = document.getElementById('regPass').value;
+  const bar = document.getElementById('strengthBar');
+  const txt = document.getElementById('strengthText');
+  if (!v) { bar.style.width='0'; txt.textContent=''; return; }
+  let s=0;
+  if (v.length>=8) s++;
+  if (/[A-Z]/.test(v)) s++;
+  if (/[0-9]/.test(v)) s++;
+  if (/[^A-Za-z0-9]/.test(v)) s++;
+  const m=[{w:'25%',c:'#ef4444',t:'Weak'},{w:'50%',c:'#f97316',t:'Fair'},{w:'75%',c:'#f59e0b',t:'Good'},{w:'100%',c:'#10b981',t:'Strong'}];
+  const d=m[s-1]||m[0];
+  bar.style.cssText=`width:${d.w};background:${d.c};height:4px;border-radius:4px;transition:.3s;`;
+  txt.style.color=d.c; txt.textContent=d.t;
+}
+
+function otpNav(el, idx, p) {
+  el.value=el.value.replace(/\D/,'');
+  const b=document.querySelectorAll(`#${p}OtpBoxes .otp-box`);
+  if(el.value&&idx<5) b[idx+1]?.focus();
+}
+function otpBack(e, el, idx, p) {
+  if(e.key==='Backspace'&&!el.value&&idx>0) {
+    document.querySelectorAll(`#${p}OtpBoxes .otp-box`)[idx-1]?.focus();
+  }
+}
+function readOtp(p) {
+  return Array.from(document.querySelectorAll(`#${p}OtpBoxes .otp-box`)).map(b=>b.value).join('');
+}
+
+function regGoStep(n) {
+  document.getElementById('regS1').classList.toggle('active', n===1);
+  document.getElementById('regS2').classList.toggle('active', n===2);
+}
+
+async function doCheckID() {
+  const id=document.getElementById('regId').value.trim();
+  if (!id) { Toast.error('Enter your Student ID.'); return; }
+  const btn=document.getElementById('checkIdBtn');
+  Loader.show(btn,'Checking...');
+  const res=await API.checkID(id);
+  Loader.hide(btn);
+  if (!res.success) { Toast.error(res.message); return; }
+  if (res.alreadyRegistered) { Toast.warning('Already registered. Please login.'); showTab('login'); return; }
+  _regId=id; _regName=res.name;
+  document.getElementById('regWelcomeName').textContent=res.name;
+  regGoStep(2);
+}
+
+async function doRegister() {
+  const pass=document.getElementById('regPass').value;
+  const conf=document.getElementById('regPassConfirm').value;
+  const tg=document.getElementById('regTelegram').value.trim().replace('@','');
+  const email=document.getElementById('regEmail').value.trim();
+  if (pass.length<8)   { Toast.error('Password must be at least 8 characters.'); return; }
+  if (pass!==conf)     { Toast.error('Passwords do not match.'); return; }
+  const btn=document.getElementById('regBtn');
+  Loader.show(btn,'Creating account...');
+  const res=await API.register({studentId:_regId, password:pass, telegramUsername:tg, email});
+  Loader.hide(btn);
+  if (res.success) { Toast.success('Account created! Please login.'); setTimeout(()=>showTab('login'),1000); }
+  else Toast.error(res.message||'Registration failed.');
+}
+
+async function doStudentLogin() {
+  const id=document.getElementById('loginId').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  if (!id||!pass) { Toast.error('Fill in all fields.'); return; }
+  const btn=document.getElementById('loginBtn');
+  Loader.show(btn,'Signing in...');
+  const res=await API.loginStudent(id,pass);
+  Loader.hide(btn);
+  if (res.success) {
+    if (document.getElementById('rememberMe').checked) localStorage.setItem('savedId',id);
+    Session.set({role:'student',studentId:id,name:res.name});
+    Toast.success(`Welcome back, ${res.name.split(' ')[0]}!`);
+    setTimeout(()=>location.href='student-dashboard.html',700);
+  } else Toast.error(res.message||'Invalid credentials.');
+}
+
+async function doInstructorLogin() {
+  const user=document.getElementById('instrUser').value.trim();
+  const pass=document.getElementById('instrPass').value;
+  if (!user||!pass) { Toast.error('Fill in all fields.'); return; }
+  const btn=document.getElementById('instrLoginBtn');
+  Loader.show(btn,'Signing in...');
+  const res=await API.loginInstructor(user,pass);
+  Loader.hide(btn);
+  if (res.success) {
+    Session.set({role:'instructor',name:res.name});
+    Toast.success('Welcome, Instructor!');
+    setTimeout(()=>location.href='instructor-dashboard.html',700);
+  } else Toast.error(res.message||'Invalid credentials.');
+}
+
+function showForgot() {
+  document.getElementById('studentSection').style.display='none';
+  document.getElementById('forgotSection').style.display='';
+  fgGoStep(1);
+}
+function showLogin() {
+  document.getElementById('forgotSection').style.display='none';
+  document.getElementById('studentSection').style.display='';
+}
+function fgGoStep(n) {
+  [1,2,3].forEach(i=>document.getElementById('fgS'+i).classList.toggle('active',i===n));
+}
+function startFgTimer() {
+  clearInterval(_fgTimer);
+  let t=60;
+  document.getElementById('fgTimer').textContent=t;
+  document.getElementById('fgTimerMsg').style.display='';
+  document.getElementById('fgResendBtn').style.display='none';
+  _fgTimer=setInterval(()=>{
+    t--;
+    document.getElementById('fgTimer').textContent=t;
+    if(t<=0){
+      clearInterval(_fgTimer);
+      document.getElementById('fgTimerMsg').style.display='none';
+      document.getElementById('fgResendBtn').style.display='';
+    }
+  },1000);
+}
+async function doForgotSend() {
+  const id=document.getElementById('fgId').value.trim();
+  if (!id) { Toast.error('Enter your Student ID.'); return; }
+  const btn=document.getElementById('fgSendBtn');
+  Loader.show(btn,'Sending OTP...');
+  const res=await API.sendOTP(id,'RESET');
+  Loader.hide(btn);
+  if (res.success) {
+    _fgId=id;
+    const via=res.sentVia==='telegram'?'Telegram (@'+res.contact+')':'Email ('+res.contact+')';
+    document.getElementById('fgSentMsg').textContent='OTP sent to '+via;
+    fgGoStep(2);
+    startFgTimer();
+  } else Toast.error(res.message||'Student ID not found.');
+}
+async function doForgotVerify() {
+  const otp=readOtp('fg');
+  if (otp.length<6) { Toast.error('Enter the full 6-digit OTP.'); return; }
+  const btn=document.getElementById('fgVerifyBtn');
+  Loader.show(btn,'Verifying...');
+  const res=await API.verifyOTP(_fgId,otp);
+  Loader.hide(btn);
+  if (res.success) { _fgOtp=otp; fgGoStep(3); Toast.success('OTP verified!'); }
+  else Toast.error(res.message||'Invalid or expired OTP.');
+}
+async function doResetPass() {
+  const pass=document.getElementById('newPass').value;
+  const conf=document.getElementById('newPassConfirm').value;
+  if (pass.length<8)  { Toast.error('Password must be at least 8 characters.'); return; }
+  if (pass!==conf)    { Toast.error('Passwords do not match.'); return; }
+  const btn=document.getElementById('resetBtn');
+  Loader.show(btn,'Resetting...');
+  const res=await API.call('resetPassword',{studentId:_fgId,otp:_fgOtp,newPassword:pass});
+  Loader.hide(btn);
+  if (res.success) { Toast.success('Password reset! Please login.'); setTimeout(()=>{showLogin();showTab('login');},1200); }
+  else Toast.error(res.message||'Reset failed.');
+}
+</script>
+</body>
+</html>

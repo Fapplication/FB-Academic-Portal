@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upload Questions – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireInstructor();
+  if (!session) return;
+
+  renderLayout({ role: 'instructor', activePage: 'tests' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>📝 Upload Exam Questions</h1>
+        <p>Add, manage and preview multiple-choice questions for each course.</p>
+      </div>
+
+      <div class="tests-grid">
+
+        <!-- LEFT: Upload Form -->
+        <div class="tests-left">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">➕ Add New Question</span>
+              <button class="btn btn-outline btn-sm" onclick="openModal('bulkQModal')">
+                📥 Bulk Import
+              </button>
+            </div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
+
+              <div class="form-group">
+                <label class="form-label">Course</label>
+                <select class="form-control" id="qCourse" onchange="loadQuestions()">
+                  <option value="">— Select Course —</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Question Text</label>
+                <textarea class="form-control" id="qText" rows="3"
+                  placeholder="Write your question clearly..."></textarea>
+              </div>
+
+              <div class="options-upload-grid">
+                <div class="form-group">
+                  <label class="form-label">Option A</label>
+                  <div class="input-wrap">
+                    <span class="input-prefix opt-a">A</span>
+                    <input type="text" id="qA" class="form-control" placeholder="Option A" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Option B</label>
+                  <div class="input-wrap">
+                    <span class="input-prefix opt-b">B</span>
+                    <input type="text" id="qB" class="form-control" placeholder="Option B" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Option C</label>
+                  <div class="input-wrap">
+                    <span class="input-prefix opt-c">C</span>
+                    <input type="text" id="qC" class="form-control" placeholder="Option C" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Option D</label>
+                  <div class="input-wrap">
+                    <span class="input-prefix opt-d">D</span>
+                    <input type="text" id="qD" class="form-control" placeholder="Option D" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Correct Answer</label>
+                <div class="correct-answer-select">
+                  <button class="ca-btn" data-val="A" onclick="selectAnswer('A',this)">A</button>
+                  <button class="ca-btn" data-val="B" onclick="selectAnswer('B',this)">B</button>
+                  <button class="ca-btn" data-val="C" onclick="selectAnswer('C',this)">C</button>
+                  <button class="ca-btn" data-val="D" onclick="selectAnswer('D',this)">D</button>
+                </div>
+                <input type="hidden" id="qCorrect" value="" />
+              </div>
+
+              <!-- Preview -->
+              <div class="q-preview" id="qPreview" style="display:none;">
+                <div class="qp-label">Preview</div>
+                <div class="qp-question" id="qpText"></div>
+                <div class="qp-options" id="qpOptions"></div>
+              </div>
+
+              <button class="btn btn-primary btn-full btn-lg"
+                      id="uploadQBtn" onclick="doUploadQuestion()">
+                Upload Question
+              </button>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Questions List -->
+        <div class="tests-right">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title" id="questionsTitle">📋 Questions</span>
+              <div class="flex gap-8">
+                <span class="badge badge-blue" id="qCountBadge">0</span>
+                <button class="btn btn-outline btn-sm" onclick="loadQuestions()">🔄</button>
+              </div>
+            </div>
+
+            <!-- Search -->
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border);">
+              <div class="input-wrap">
+                <span class="input-prefix">🔍</span>
+                <input type="text" id="qSearch" class="form-control"
+                       placeholder="Search questions..." oninput="filterQuestions()" />
+              </div>
+            </div>
+
+            <div id="questionsList" style="max-height:600px;overflow-y:auto;">
+              <div class="empty-state" style="padding:40px 20px;">
+                <div class="empty-icon">📝</div>
+                <h3>Select a course</h3>
+                <p>Choose a course to view its questions.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ BULK IMPORT MODAL ══ -->
+    <div class="modal-overlay" id="bulkQModal">
+      <div class="modal" style="max-width:580px;">
+        <div class="modal-header">
+          <div>
+            <h3>📥 Bulk Import Questions</h3>
+            <p class="text-sm text-muted">Import multiple questions from CSV format</p>
+          </div>
+          <button class="modal-close" onclick="closeModal('bulkQModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Course</label>
+            <select class="form-control" id="bulkCourse">
+              <option value="">— Select Course —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">CSV Format</label>
+            <div class="bulk-format-hint">
+              <code>Question Text, Option A, Option B, Option C, Option D, Correct Answer</code>
+              <div class="text-xs text-muted mt-4">Correct Answer should be A, B, C, or D</div>
+            </div>
+            <textarea class="form-control mt-8" id="bulkQCsv" rows="8"
+              placeholder="What is the speed limit on urban roads?, 50km/h, 60km/h, 80km/h, 100km/h, A&#10;..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('bulkQModal')">Cancel</button>
+          <button class="btn btn-primary" id="bulkQBtn" onclick="doBulkImport()">
+            Import Questions
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ EDIT QUESTION MODAL ══ -->
+    <div class="modal-overlay" id="editQModal">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-header">
+          <div><h3>✏️ Edit Question</h3></div>
+          <button class="modal-close" onclick="closeModal('editQModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="editQId" />
+          <div class="form-group">
+            <label class="form-label">Question Text</label>
+            <textarea class="form-control" id="editQText" rows="3"></textarea>
+          </div>
+          <div class="options-upload-grid">
+            <div class="form-group">
+              <label class="form-label">Option A</label>
+              <input type="text" id="editQA" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Option B</label>
+              <input type="text" id="editQB" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Option C</label>
+              <input type="text" id="editQC" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Option D</label>
+              <input type="text" id="editQD" class="form-control" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Correct Answer</label>
+            <select class="form-control" id="editQCorrect">
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('editQModal')">Cancel</button>
+          <button class="btn btn-primary" id="saveEditQBtn" onclick="doSaveEditQ()">
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectTestsStyles();
+
+  let allCourses   = [];
+  let allQuestions = [];
+  let selectedCorrect = '';
+
+  // ── Load Courses ─────────────────────────────────────────────
+  const coursesRes = await API.getCourses();
+  allCourses = coursesRes.success ? coursesRes.courses : [];
+
+  ['qCourse','bulkCourse'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    allCourses.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value       = c.courseId;
+      opt.textContent = c.courseName;
+      sel.appendChild(opt);
+    });
+  });
+
+  // ── Select Correct Answer ─────────────────────────────────────
+  window.selectAnswer = function(val, btn) {
+    selectedCorrect = val;
+    document.getElementById('qCorrect').value = val;
+    document.querySelectorAll('.ca-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updatePreview();
+  };
+
+  // ── Live Preview ──────────────────────────────────────────────
+  ['qText','qA','qB','qC','qD'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', updatePreview);
+  });
+
+  function updatePreview() {
+    const text = document.getElementById('qText').value.trim();
+    const a    = document.getElementById('qA').value.trim();
+    const b    = document.getElementById('qB').value.trim();
+    const c    = document.getElementById('qC').value.trim();
+    const d    = document.getElementById('qD').value.trim();
+    const prev = document.getElementById('qPreview');
+
+    if (!text && !a) { prev.style.display='none'; return; }
+    prev.style.display = 'block';
+
+    document.getElementById('qpText').textContent = text || '(Question text)';
+    document.getElementById('qpOptions').innerHTML = [
+      { key:'A', val:a }, { key:'B', val:b },
+      { key:'C', val:c }, { key:'D', val:d }
+    ].map(o => `
+      <div class="qp-opt ${selectedCorrect===o.key?'correct':''}">
+        <span class="qp-letter">${o.key}</span>
+        <span>${o.val || '(empty)'}</span>
+        ${selectedCorrect===o.key ? '<span class="qp-tick">✓</span>' : ''}
+      </div>`).join('');
+  }
+
+  // ── Upload Question ───────────────────────────────────────────
+  window.doUploadQuestion = async function() {
+    const courseId = document.getElementById('qCourse').value;
+    const question = document.getElementById('qText').value.trim();
+    const optionA  = document.getElementById('qA').value.trim();
+    const optionB  = document.getElementById('qB').value.trim();
+    const optionC  = document.getElementById('qC').value.trim();
+    const optionD  = document.getElementById('qD').value.trim();
+    const correct  = document.getElementById('qCorrect').value;
+
+    if (!courseId)  { Toast.error('Select a course.'); return; }
+    if (!question)  { Toast.error('Enter the question text.'); return; }
+    if (!optionA || !optionB || !optionC || !optionD) { Toast.error('Fill in all four options.'); return; }
+    if (!correct)   { Toast.error('Select the correct answer.'); return; }
+
+    const btn = document.getElementById('uploadQBtn');
+    Loader.show(btn, 'Uploading...');
+    const res = await API.uploadQuestion({
+      courseId, question, optionA, optionB, optionC, optionD,
+      correctAnswer: correct
+    });
+    Loader.hide(btn);
+
+    if (res.success) {
+      Toast.success('Question uploaded!');
+      ['qText','qA','qB','qC','qD'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      selectedCorrect = '';
+      document.getElementById('qCorrect').value = '';
+      document.querySelectorAll('.ca-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('qPreview').style.display = 'none';
+      await loadQuestions();
+    } else {
+      Toast.error(res.message || 'Upload failed.');
+    }
+  };
+
+  // ── Load Questions ────────────────────────────────────────────
+  window.loadQuestions = async function() {
+    const courseId = document.getElementById('qCourse').value;
+    if (!courseId) return;
+
+    const course = allCourses.find(c => c.courseId === courseId);
+    document.getElementById('questionsTitle').textContent =
+      `📋 ${course?.courseName || 'Questions'}`;
+
+    const ql = document.getElementById('questionsList');
+    ql.innerHTML = `<div class="flex-center" style="padding:40px;">
+      <div class="spinner spinner-dark"></div></div>`;
+
+    const res = await API.getOnlineTests(courseId);
+    allQuestions = res.success ? (res.questions || []) : [];
+
+    document.getElementById('qCountBadge').textContent = allQuestions.length;
+    renderQuestions(allQuestions);
+  };
+
+  // ── Filter Questions ──────────────────────────────────────────
+  window.filterQuestions = function() {
+    const q = document.getElementById('qSearch').value.toLowerCase();
+    const filtered = allQuestions.filter(q2 =>
+      (q2.question||'').toLowerCase().includes(q)
+    );
+    renderQuestions(filtered);
+  };
+
+  // ── Render Questions ──────────────────────────────────────────
+  function renderQuestions(questions) {
+    const ql = document.getElementById('questionsList');
+    if (!questions.length) {
+      ql.innerHTML = `<div class="empty-state" style="padding:32px 20px;">
+        <div class="empty-icon">📭</div>
+        <h3>No questions yet</h3>
+        <p>Upload your first question using the form.</p>
+      </div>`;
+      return;
+    }
+
+    ql.innerHTML = questions.map((q, i) => `
+      <div class="q-list-item">
+        <div class="qli-num">${i + 1}</div>
+        <div class="qli-content">
+          <div class="qli-text">${q.question}</div>
+          <div class="qli-opts">
+            <span class="qli-opt">A: ${q.optionA}</span>
+            <span class="qli-opt">B: ${q.optionB}</span>
+            <span class="qli-opt">C: ${q.optionC}</span>
+            <span class="qli-opt">D: ${q.optionD}</span>
+          </div>
+        </div>
+        <div class="qli-actions">
+          <button class="btn btn-danger btn-sm btn-icon"
+            onclick="doDeleteQuestion('${q.id||i}','${(q.question||'').substring(0,30).replace(/'/g,"\\'")}')">
+            🗑
+          </button>
+        </div>
+      </div>`).join('');
+  }
+
+  // ── Delete Question ───────────────────────────────────────────
+  window.doDeleteQuestion = async function(questionId, preview) {
+    if (!confirm(`Delete question: "${preview}..."?`)) return;
+    const res = await API.deleteQuestion(questionId);
+    if (res.success) {
+      Toast.success('Question deleted.');
+      await loadQuestions();
+    } else {
+      Toast.error(res.message || 'Delete failed.');
+    }
+  };
+
+  // ── Bulk Import ───────────────────────────────────────────────
+  window.doBulkImport = async function() {
+    const courseId = document.getElementById('bulkCourse').value;
+    const csv      = document.getElementById('bulkQCsv').value.trim();
+    if (!courseId) { Toast.error('Select a course.'); return; }
+    if (!csv)      { Toast.error('Paste CSV data.'); return; }
+
+    const lines = csv.split('\n').filter(l => l.trim());
+    const data  = [];
+    for (const line of lines) {
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length < 6) continue;
+      const [question, optionA, optionB, optionC, optionD, correctAnswer] = parts;
+      if (!question || !optionA) continue;
+      data.push({ courseId, question, optionA, optionB, optionC, optionD, correctAnswer });
+    }
+
+    if (!data.length) { Toast.error('No valid rows found.'); return; }
+
+    const btn = document.getElementById('bulkQBtn');
+    Loader.show(btn, `Importing ${data.length}...`);
+
+    let ok = 0, fail = 0;
+    for (const row of data) {
+      const res = await API.uploadQuestion(row);
+      res.success ? ok++ : fail++;
+    }
+
+    Loader.hide(btn);
+    closeModal('bulkQModal');
+    Toast.success(`Imported: ${ok} questions${fail ? ', ' + fail + ' failed' : ''}.`);
+
+    if (document.getElementById('qCourse').value === courseId) {
+      await loadQuestions();
+    }
+  };
+
+})();
+
+function injectTestsStyles() {
+  if (document.getElementById('tests-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'tests-styles';
+  s.textContent = `
+    .tests-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .options-upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .input-prefix.opt-a { background:#dbeafe;color:#1e40af;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800; }
+    .input-prefix.opt-b { background:#d1fae5;color:#065f46;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800; }
+    .input-prefix.opt-c { background:#fef3c7;color:#92400e;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800; }
+    .input-prefix.opt-d { background:#fee2e2;color:#991b1b;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800; }
+
+    /* Correct Answer Select */
+    .correct-answer-select {
+      display: flex;
+      gap: 8px;
+    }
+    .ca-btn {
+      flex: 1;
+      padding: 10px;
+      border: 2px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--bg);
+      font-family: inherit;
+      font-size: .9rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: var(--trans);
+      color: var(--text-muted);
+    }
+    .ca-btn:hover  { border-color: var(--primary-light); color: var(--primary-light); }
+    .ca-btn.active { border-color: var(--success); background: var(--success-light); color: var(--success-dark); }
+
+    /* Preview */
+    .q-preview {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 14px;
+    }
+    .qp-label    { font-size:.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px; }
+    .qp-question { font-weight:700;font-size:.9rem;margin-bottom:10px;color:var(--text); }
+    .qp-options  { display:flex;flex-direction:column;gap:6px; }
+    .qp-opt      { display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff;border:1px solid var(--border);border-radius:var(--r-xs);font-size:.82rem; }
+    .qp-opt.correct { border-color:var(--success);background:var(--success-light); }
+    .qp-letter   { width:20px;height:20px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.7rem;flex-shrink:0; }
+    .qp-opt.correct .qp-letter { background:var(--success);border-color:var(--success);color:#fff; }
+    .qp-tick     { margin-left:auto;color:var(--success);font-weight:700; }
+
+    /* Question list */
+    .q-list-item {
+      display: flex;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      transition: var(--trans);
+      align-items: flex-start;
+    }
+    .q-list-item:last-child { border-bottom: none; }
+    .q-list-item:hover { background: var(--bg-hover); }
+    .qli-num {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .72rem; font-weight: 700;
+      flex-shrink: 0; color: var(--text-muted);
+    }
+    .qli-content { flex: 1; min-width: 0; }
+    .qli-text    { font-weight: 600; font-size: .86rem; margin-bottom: 6px; line-height: 1.4; }
+    .qli-opts    { display: flex; flex-wrap: wrap; gap: 6px; }
+    .qli-opt     { font-size: .72rem; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; }
+    .qli-actions { flex-shrink: 0; }
+
+    /* Bulk format hint */
+    .bulk-format-hint {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      font-size: .8rem;
+    }
+    .bulk-format-hint code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .78rem;
+      color: var(--primary);
+    }
+
+    @media (max-width: 900px) {
+      .tests-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 500px) {
+      .options-upload-grid { grid-template-columns: 1fr; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

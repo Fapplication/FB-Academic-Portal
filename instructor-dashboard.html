@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Instructor Dashboard – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireInstructor();
+  if (!session) return;
+
+  renderLayout({ role: 'instructor', activePage: 'dashboard' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+
+      <!-- Welcome Banner -->
+      <div class="instr-banner">
+        <div class="ib-left">
+          <div class="ib-greeting">Welcome back,</div>
+          <h1 class="ib-name">${session.name} 👨‍🏫</h1>
+          <p class="ib-sub">Here is your teaching overview and pending actions.</p>
+        </div>
+        <div class="ib-right">
+          <div class="ib-date">${DateUtil.today()}</div>
+        </div>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid" id="statsGrid">${skeletonGrid(5)}</div>
+
+      <!-- Main Grid -->
+      <div class="instr-grid">
+
+        <!-- Left: Courses Panel -->
+        <div class="instr-main">
+
+          <!-- Courses Overview -->
+          <div class="card mb-20">
+            <div class="card-header">
+              <span class="card-title">📚 Courses Overview</span>
+              <button class="btn btn-primary btn-sm" onclick="openModal('addCourseModal')">
+                + Add Course
+              </button>
+            </div>
+            <div id="coursesOverview" class="card-body">
+              <div class="skeleton skel-box"></div>
+            </div>
+          </div>
+
+          <!-- Recent Complaints -->
+          <div class="card mb-20">
+            <div class="card-header">
+              <span class="card-title">📬 Pending Complaints</span>
+              <button class="btn btn-outline btn-sm" onclick="location.href='instructor-complaints.html'">
+                View All →
+              </button>
+            </div>
+            <div id="complaintsPreview" class="card-body">
+              <div class="skeleton skel-line"></div>
+              <div class="skeleton skel-line mt-8" style="width:80%"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right: Actions & Info -->
+        <div class="instr-side">
+
+          <!-- Quick Actions -->
+          <div class="card mb-16">
+            <div class="card-header"><span class="card-title">⚡ Quick Actions</span></div>
+            <div class="card-body p-16">
+              <div class="quick-actions">
+                <button class="quick-btn" onclick="location.href='instructor-marks.html'">
+                  <span class="qb-icon">📊</span>Manage Marks
+                </button>
+                <button class="quick-btn" onclick="location.href='instructor-complaints.html'">
+                  <span class="qb-icon">📬</span>Complaints
+                </button>
+                <button class="quick-btn" onclick="location.href='instructor-tests.html'">
+                  <span class="qb-icon">📝</span>Upload Questions
+                </button>
+                <button class="quick-btn" onclick="location.href='instructor-notes.html'">
+                  <span class="qb-icon">📚</span>Lecture Notes
+                </button>
+                <button class="quick-btn" onclick="location.href='instructor-notices.html'">
+                  <span class="qb-icon">📣</span>Send Notice
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Assessments Manager -->
+          <div class="card mb-16">
+            <div class="card-header">
+              <span class="card-title">⚖️ Assessment Weights</span>
+              <button class="btn btn-outline btn-sm" onclick="openWeightsManager()">Manage</button>
+            </div>
+            <div id="weightsPreview" class="card-body p-16">
+              <div class="skeleton skel-line"></div>
+              <div class="skeleton skel-line mt-8" style="width:70%"></div>
+            </div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">🕐 Recent Activity</span></div>
+            <div id="recentActivity" class="card-body p-16">
+              <div class="skeleton skel-line"></div>
+              <div class="skeleton skel-line mt-8"></div>
+              <div class="skeleton skel-line mt-8" style="width:70%"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ADD COURSE MODAL ══ -->
+    <div class="modal-overlay" id="addCourseModal">
+      <div class="modal">
+        <div class="modal-header">
+          <div><h3>📚 Add New Course</h3><p class="text-sm text-muted">Add a new subject to the portal</p></div>
+          <button class="modal-close" onclick="closeModal('addCourseModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Course Name</label>
+            <input type="text" id="newCourseName" class="form-control"
+                   placeholder="e.g. Geometric Design of Roads" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Course Code</label>
+            <input type="text" id="newCourseCode" class="form-control"
+                   placeholder="e.g. CEng 3201" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('addCourseModal')">Cancel</button>
+          <button class="btn btn-primary" id="addCourseBtn" onclick="doAddCourse()">+ Add Course</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ WEIGHTS MANAGER MODAL ══ -->
+    <div class="modal-overlay" id="weightsModal">
+      <div class="modal" style="max-width:640px;">
+        <div class="modal-header">
+          <div><h3>⚖️ Manage Assessment Weights</h3><p class="text-sm text-muted" id="weightsCourseLabel"></p></div>
+          <button class="modal-close" onclick="closeModal('weightsModal')">✕</button>
+        </div>
+        <div class="modal-body" id="weightsModalBody">
+          <div class="skeleton skel-box"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('weightsModal')">Close</button>
+          <button class="btn btn-primary" id="addAssessBtn" onclick="showAddAssessForm()">+ Add Assessment</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ADD ASSESSMENT MODAL ══ -->
+    <div class="modal-overlay" id="addAssessModal">
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <div><h3>➕ Add Assessment</h3><p class="text-sm text-muted" id="addAssessCourseLabel"></p></div>
+          <button class="modal-close" onclick="closeModal('addAssessModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Assessment Name</label>
+            <input type="text" id="assessName" class="form-control" placeholder="e.g. Quiz, Mid Exam, Final" />
+          </div>
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">Weight (%)</label>
+              <input type="number" id="assessWeight" class="form-control" placeholder="e.g. 20" min="1" max="100" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Score</label>
+              <input type="number" id="assessMax" class="form-control" placeholder="e.g. 100" min="1" />
+            </div>
+          </div>
+          <div class="weight-warning hidden" id="weightWarning">
+            ⚠️ Total weights exceed 100%. Please adjust.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('addAssessModal')">Cancel</button>
+          <button class="btn btn-success" id="saveAssessBtn" onclick="doAddAssessment()">✓ Save Assessment</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectDashInstrStyles();
+
+  let allCourses     = [];
+  let allComplaints  = [];
+  let selectedCourseId = '';
+
+  // Load all data
+  const [dashRes, coursesRes, complaintsRes] = await Promise.all([
+    API.getDashboard(),
+    API.getCourses(),
+    API.getComplaints()
+  ]);
+
+  allCourses    = coursesRes.success    ? coursesRes.courses       : [];
+  allComplaints = complaintsRes.success ? complaintsRes.complaints : [];
+
+  renderStats(dashRes);
+  renderCoursesOverview(allCourses, dashRes);
+  renderComplaintsPreview(allComplaints);
+  renderWeightsPreview(allCourses);
+  renderRecentActivity(allComplaints);
+
+  // ── Stats ─────────────────────────────────────────────────
+  function renderStats(d) {
+    const totalStudents    = d.success ? d.totalStudents    : '—';
+    const pendingComplaints= d.success ? d.pendingComplaints: '—';
+    const totalCourses     = allCourses.length;
+    const totalAssessments = d.success ? (d.totalAssessments || '—') : '—';
+    const avgScore         = d.success ? (d.avgScore || '—') : '—';
+
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card blue">
+        <div class="stat-icon">👥</div>
+        <div class="stat-value">${totalStudents}</div>
+        <div class="stat-label">Total Students</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-icon">📚</div>
+        <div class="stat-value">${totalCourses}</div>
+        <div class="stat-label">Active Courses</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-icon">📬</div>
+        <div class="stat-value">${pendingComplaints}</div>
+        <div class="stat-label">Pending Complaints</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-icon">📊</div>
+        <div class="stat-value">${avgScore}${avgScore !== '—' ? '%' : ''}</div>
+        <div class="stat-label">Class Average</div>
+      </div>
+      <div class="stat-card cyan">
+        <div class="stat-icon">⚖️</div>
+        <div class="stat-value">${totalAssessments}</div>
+        <div class="stat-label">Assessments</div>
+      </div>
+    `;
+  }
+
+  // ── Courses Overview ──────────────────────────────────────
+  function renderCoursesOverview(courses, d) {
+    const co = document.getElementById('coursesOverview');
+    if (!courses.length) {
+      co.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📚</div>
+          <h3>No courses yet</h3>
+          <p>Click "+ Add Course" to create your first course.</p>
+        </div>`;
+      return;
+    }
+
+    const courseStats = d.success && d.courses ? d.courses : [];
+
+    co.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Course</th>
+              <th>Code</th>
+              <th>Students</th>
+              <th>Avg Score</th>
+              <th>Assessments</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${courses.map(c => {
+              const cs  = courseStats.find(s => s.courseId === c.courseId) || {};
+              const avg = cs.avgScore || '—';
+              const stu = cs.studentCount || '—';
+              const ass = cs.assessmentCount || '—';
+              const g   = avg !== '—' ? Grade.getLetter(Number(avg)) : null;
+              return `
+                <tr>
+                  <td class="fw-600">${c.courseName}</td>
+                  <td><span class="badge badge-blue">${c.courseCode || '—'}</span></td>
+                  <td>${stu}</td>
+                  <td>${avg !== '—'
+                    ? `<span style="color:${g.color};font-weight:700;">${avg}%</span>`
+                    : '—'}</td>
+                  <td>${ass}</td>
+                  <td>
+                    <div class="flex gap-6">
+                      <button class="btn btn-outline btn-sm"
+                        onclick="openWeightsForCourse('${c.courseId}','${c.courseName.replace(/'/g,"\\'")}')">
+                        ⚖️ Weights
+                      </button>
+                      <button class="btn btn-danger btn-sm"
+                        onclick="doDeleteCourse('${c.courseId}','${c.courseName.replace(/'/g,"\\'")}')">
+                        🗑
+                      </button>
+                    </div>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  // ── Complaints Preview ────────────────────────────────────
+  function renderComplaintsPreview(complaints) {
+    const cp      = document.getElementById('complaintsPreview');
+    const pending = complaints.filter(c => (c.Status||c.status) === 'Pending');
+    if (!pending.length) {
+      cp.innerHTML = `<p class="text-sm text-muted text-center" style="padding:8px;">✅ No pending complaints.</p>`;
+      return;
+    }
+    cp.innerHTML = pending.slice(0, 3).map(c => `
+      <div class="complaint-preview-item">
+        <div class="cpi-left">
+          <span class="badge badge-red">Pending</span>
+          <span class="text-sm fw-600">${c.StudentID || c.studentId || '—'}</span>
+        </div>
+        <div class="text-xs text-muted">${(c.Type||c.type||'').substring(0,30)}</div>
+        <div class="text-xs text-muted">${DateUtil.format(c.Timestamp||c.timestamp)}</div>
+      </div>`).join('') +
+      (pending.length > 3 ? `<div class="text-xs text-muted text-center mt-8">+${pending.length - 3} more</div>` : '');
+  }
+
+  // ── Weights Preview ───────────────────────────────────────
+  function renderWeightsPreview(courses) {
+    const wp = document.getElementById('weightsPreview');
+    if (!courses.length) {
+      wp.innerHTML = `<p class="text-xs text-muted">No courses yet.</p>`;
+      return;
+    }
+    wp.innerHTML = courses.map(c => `
+      <div class="flex-between mb-8">
+        <span class="text-sm fw-600">${c.courseName}</span>
+        <button class="link-btn text-xs"
+          onclick="openWeightsForCourse('${c.courseId}','${c.courseName.replace(/'/g,"\\'")}')">
+          Manage →
+        </button>
+      </div>`).join('');
+  }
+
+  // ── Recent Activity ───────────────────────────────────────
+  function renderRecentActivity(complaints) {
+    const ra   = document.getElementById('recentActivity');
+    const recent = [...complaints].reverse().slice(0, 5);
+    if (!recent.length) {
+      ra.innerHTML = `<p class="text-xs text-muted text-center">No recent activity.</p>`;
+      return;
+    }
+    ra.innerHTML = recent.map(c => {
+      const status = c.Status || c.status || 'Pending';
+      const badge  = status === 'Pending'  ? 'badge-amber' :
+                     status === 'Resolved' ? 'badge-green' : 'badge-red';
+      return `
+        <div class="activity-item">
+          <div class="ai-dot"></div>
+          <div class="ai-info">
+            <div class="text-sm fw-600">${c.StudentID||c.studentId||'—'} — ${c.Type||c.type||'Complaint'}</div>
+            <div class="flex gap-6 items-center mt-2">
+              <span class="badge ${badge}" style="font-size:.65rem;">${status}</span>
+              <span class="text-xs text-muted">${DateUtil.format(c.Timestamp||c.timestamp)}</span>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Add Course ────────────────────────────────────────────
+  window.doAddCourse = async function() {
+    const name = document.getElementById('newCourseName').value.trim();
+    const code = document.getElementById('newCourseCode').value.trim();
+    if (!name) { Toast.error('Enter a course name.'); return; }
+    const btn = document.getElementById('addCourseBtn');
+    Loader.show(btn, 'Adding...');
+    const res = await API.addCourse({ courseName: name, courseCode: code });
+    Loader.hide(btn);
+    if (res.success) {
+      Toast.success('Course added!');
+      closeModal('addCourseModal');
+      document.getElementById('newCourseName').value = '';
+      document.getElementById('newCourseCode').value = '';
+      const r2 = await API.getCourses();
+      allCourses = r2.success ? r2.courses : [];
+      renderCoursesOverview(allCourses, dashRes);
+      renderWeightsPreview(allCourses);
+    } else {
+      Toast.error(res.message || 'Failed to add course.');
+    }
+  };
+
+  // ── Delete Course ─────────────────────────────────────────
+  window.doDeleteCourse = async function(courseId, courseName) {
+    if (!confirm(`Delete course "${courseName}"? This cannot be undone.`)) return;
+    const res = await API.deleteCourse(courseId);
+    if (res.success) {
+      Toast.success('Course deleted.');
+      const r2 = await API.getCourses();
+      allCourses = r2.success ? r2.courses : [];
+      renderCoursesOverview(allCourses, dashRes);
+      renderWeightsPreview(allCourses);
+    } else {
+      Toast.error(res.message || 'Delete failed.');
+    }
+  };
+
+  // ── Weights Manager ───────────────────────────────────────
+  window.openWeightsManager = function() {
+    if (!allCourses.length) { Toast.warning('No courses yet. Add a course first.'); return; }
+    openWeightsForCourse(allCourses[0].courseId, allCourses[0].courseName);
+  };
+
+  window.openWeightsForCourse = async function(courseId, courseName) {
+    selectedCourseId = courseId;
+    document.getElementById('weightsCourseLabel').textContent = courseName;
+    document.getElementById('addAssessCourseLabel').textContent = courseName;
+    openModal('weightsModal');
+    await loadAssessments(courseId);
+  };
+
+  async function loadAssessments(courseId) {
+    const body = document.getElementById('weightsModalBody');
+    body.innerHTML = `<div class="flex-center" style="padding:24px;"><div class="spinner spinner-dark"></div></div>`;
+    const res = await API.getCourseAssessments(courseId);
+    const assessments = res.success ? (res.assessments || []) : [];
+    renderAssessments(assessments);
+  }
+
+  function renderAssessments(assessments) {
+    const body  = document.getElementById('weightsModalBody');
+    const total = assessments.reduce((s, a) => s + Number(a.weight || 0), 0);
+    const warn  = total > 100;
+
+    if (!assessments.length) {
+      body.innerHTML = `
+        <div class="empty-state" style="padding:24px 0;">
+          <div class="empty-icon">⚖️</div>
+          <h3>No assessments yet</h3>
+          <p>Click "+ Add Assessment" to define Quiz, Mid, Final etc.</p>
+        </div>`;
+      return;
+    }
+
+    body.innerHTML = `
+      ${warn ? `<div class="weight-warning">⚠️ Total weights = ${total}% (exceeds 100%)</div>` : ''}
+      <div class="weight-total-bar">
+        <div class="wtb-fill" style="width:${Math.min(total,100)}%;background:${warn?'var(--danger)':'var(--success)'}"></div>
+      </div>
+      <div class="flex-between mb-12">
+        <span class="text-xs text-muted">Total Weight</span>
+        <span class="fw-700 ${warn?'text-danger':'text-success'}">${total}%</span>
+      </div>
+      <div class="assess-manage-list">
+        ${assessments.map(a => `
+          <div class="aml-row">
+            <div class="aml-info">
+              <div class="fw-600 text-sm">${a.name}</div>
+              <div class="text-xs text-muted">Max: ${a.maxScore} pts</div>
+            </div>
+            <div class="aml-weight">
+              <span class="badge badge-blue">${a.weight}%</span>
+            </div>
+            <div class="aml-actions">
+              <button class="btn btn-danger btn-sm btn-icon"
+                onclick="doDeleteAssessment('${a.assessmentId}','${a.name.replace(/'/g,"\\'")}')">
+                🗑
+              </button>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  window.showAddAssessForm = function() {
+    document.getElementById('assessName').value   = '';
+    document.getElementById('assessWeight').value = '';
+    document.getElementById('assessMax').value    = '';
+    openModal('addAssessModal');
+  };
+
+  window.doAddAssessment = async function() {
+    const name   = document.getElementById('assessName').value.trim();
+    const weight = Number(document.getElementById('assessWeight').value);
+    const max    = Number(document.getElementById('assessMax').value);
+    if (!name)         { Toast.error('Enter assessment name.'); return; }
+    if (!weight || weight < 1) { Toast.error('Enter a valid weight.'); return; }
+    if (!max   || max   < 1)  { Toast.error('Enter a valid max score.'); return; }
+
+    const btn = document.getElementById('saveAssessBtn');
+    Loader.show(btn, 'Saving...');
+    const res = await API.addAssessment({
+      courseId: selectedCourseId, name, weight, maxScore: max
+    });
+    Loader.hide(btn);
+    if (res.success) {
+      Toast.success('Assessment added!');
+      closeModal('addAssessModal');
+      await loadAssessments(selectedCourseId);
+    } else {
+      Toast.error(res.message || 'Failed.');
+    }
+  };
+
+  window.doDeleteAssessment = async function(assessmentId, name) {
+    if (!confirm(`Delete assessment "${name}"?`)) return;
+    const res = await API.deleteAssessment(assessmentId);
+    if (res.success) {
+      Toast.success('Assessment deleted.');
+      await loadAssessments(selectedCourseId);
+    } else {
+      Toast.error(res.message || 'Delete failed.');
+    }
+  };
+
+})();
+
+function injectDashInstrStyles() {
+  if (document.getElementById('instr-dash-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'instr-dash-styles';
+  s.textContent = `
+    /* Instructor Banner */
+    .instr-banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #1e40af 100%);
+      border-radius: var(--r-lg);
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      box-shadow: 0 8px 32px rgba(15,23,42,.3);
+    }
+    .ib-greeting { color: rgba(255,255,255,.6); font-size: .88rem; margin-bottom: 4px; }
+    .ib-name     { color: #fff; font-size: clamp(1.2rem,2.5vw,1.8rem); font-weight: 800; margin-bottom: 6px; }
+    .ib-sub      { color: rgba(255,255,255,.55); font-size: .84rem; }
+    .ib-date     { color: rgba(255,255,255,.6); font-size: .82rem; background: rgba(255,255,255,.08); padding: 8px 14px; border-radius: var(--r-sm); border: 1px solid rgba(255,255,255,.1); }
+
+    /* Instructor grid */
+    .instr-grid {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    /* Complaint preview */
+    .complaint-preview-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .complaint-preview-item:last-child { border-bottom: none; }
+    .cpi-left { display: flex; align-items: center; gap: 8px; }
+
+    /* Activity */
+    .activity-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .ai-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .ai-info { flex: 1; }
+
+    /* Weight warning */
+    .weight-warning {
+      background: var(--danger-light);
+      color: var(--danger-dark);
+      border: 1px solid var(--danger);
+      border-radius: var(--r-sm);
+      padding: 8px 12px;
+      font-size: .82rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .weight-warning.hidden { display: none; }
+
+    /* Weight bar */
+    .weight-total-bar {
+      height: 8px;
+      background: var(--bg);
+      border-radius: var(--r-full);
+      overflow: hidden;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+    }
+    .wtb-fill { height: 100%; border-radius: var(--r-full); transition: width .4s; }
+
+    /* Assessment manage list */
+    .assess-manage-list { display: flex; flex-direction: column; gap: 8px; }
+    .aml-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+    }
+    .aml-info    { flex: 1; }
+    .aml-weight  { flex-shrink: 0; }
+    .aml-actions { flex-shrink: 0; }
+
+    .text-danger  { color: var(--danger) !important; }
+    .text-success { color: var(--success) !important; }
+
+    @media (max-width: 1024px) {
+      .instr-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .instr-banner { padding: 20px; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

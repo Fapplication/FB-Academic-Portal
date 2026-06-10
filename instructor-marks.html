@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage Marks – Civil Eng. Portal</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<script src="js/config.js"></script>
+<script src="js/layout.js"></script>
+<script>
+(async () => {
+  const session = Session.requireInstructor();
+  if (!session) return;
+
+  renderLayout({ role: 'instructor', activePage: 'marks' });
+
+  const pc = document.getElementById('pageContent');
+  pc.innerHTML = `
+    <div class="page-section">
+      <div class="page-header">
+        <h1>📊 Manage Student Marks</h1>
+        <p>View, enter and update student marks for each course and assessment.</p>
+      </div>
+
+      <!-- Course + Assessment Selectors -->
+      <div class="card mb-20">
+        <div class="card-body" style="padding:16px 20px;">
+          <div class="flex gap-12 items-center flex-wrap">
+            <div class="form-group" style="flex:1;min-width:200px;">
+              <label class="form-label">Course</label>
+              <select class="form-control" id="courseSelect" onchange="onCourseChange()">
+                <option value="">— Select Course —</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;min-width:180px;">
+              <label class="form-label">Assessment</label>
+              <select class="form-control" id="assessSelect" onchange="loadMarks()" disabled>
+                <option value="">— Select Assessment —</option>
+              </select>
+            </div>
+            <div class="form-group" style="min-width:160px;">
+              <label class="form-label">Search Student</label>
+              <div class="input-wrap">
+                <span class="input-prefix">🔍</span>
+                <input type="text" id="searchInput" class="form-control"
+                       placeholder="ID or Name..." oninput="filterStudents()" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Marks Table -->
+      <div id="marksSection" class="hidden">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" id="marksTableTitle">Student Marks</span>
+            <div class="flex gap-8 flex-wrap">
+              <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+              <button class="btn btn-success btn-sm" onclick="saveAllMarks()">💾 Save All</button>
+            </div>
+          </div>
+          <div class="marks-info-bar" id="marksInfoBar"></div>
+          <div class="table-wrap">
+            <table id="marksTable">
+              <thead id="marksHead"></thead>
+              <tbody id="marksBody"></tbody>
+            </table>
+          </div>
+          <div class="card-footer">
+            <div class="flex-between flex-wrap gap-8">
+              <span class="text-xs text-muted" id="marksCount"></span>
+              <button class="btn btn-success" onclick="saveAllMarks()" id="saveAllBtn">
+                💾 Save All Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Placeholder -->
+      <div id="marksPlaceholder">
+        <div class="marks-placeholder-card">
+          <div class="mpc-icon">📊</div>
+          <h3>Select a course and assessment</h3>
+          <p>Choose a course and assessment type above to view and edit student marks.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ EDIT SINGLE MARK MODAL ══ -->
+    <div class="modal-overlay" id="editMarkModal">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <div>
+            <h3>✏️ Edit Mark</h3>
+            <p class="text-sm text-muted" id="editMarkLabel"></p>
+          </div>
+          <button class="modal-close" onclick="closeModal('editMarkModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="edit-mark-info" id="editMarkInfo"></div>
+          <div class="form-group">
+            <label class="form-label">Score <span id="editMarkMax" class="label-hint"></span></label>
+            <input type="number" id="editMarkValue" class="form-control"
+                   placeholder="Enter score" min="0" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('editMarkModal')">Cancel</button>
+          <button class="btn btn-primary" id="saveMarkBtn" onclick="doSaveSingleMark()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ BULK IMPORT MODAL ══ -->
+    <div class="modal-overlay" id="bulkModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <div><h3>📥 Bulk Import Marks</h3><p class="text-sm text-muted">Paste CSV data to import multiple marks at once</p></div>
+          <button class="modal-close" onclick="closeModal('bulkModal')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">CSV Format: StudentID, Score (one per line)</label>
+            <textarea class="form-control" id="bulkCsvInput" rows="8"
+              placeholder="ETS0001/14, 85&#10;ETS0002/14, 72&#10;ETS0003/14, 90"></textarea>
+          </div>
+          <div class="form-hint">First row can be a header (StudentID, Score) — it will be skipped.</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('bulkModal')">Cancel</button>
+          <button class="btn btn-primary" id="bulkImportBtn" onclick="doBulkImport()">Import</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  injectMarksInstrStyles();
+
+  // ── State ──────────────────────────────────────────────────
+  let allCourses     = [];
+  let allAssessments = [];
+  let allStudents    = [];
+  let currentCourse  = null;
+  let currentAssess  = null;
+  let editStudentId  = '';
+  let pendingChanges = {}; // { studentId: newScore }
+
+  // ── Load Courses ───────────────────────────────────────────
+  const coursesRes = await API.getCourses();
+  allCourses = coursesRes.success ? coursesRes.courses : [];
+
+  const courseSelect = document.getElementById('courseSelect');
+  allCourses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value       = c.courseId;
+    opt.textContent = c.courseName;
+    courseSelect.appendChild(opt);
+  });
+
+  // ── Course Change ──────────────────────────────────────────
+  window.onCourseChange = async function() {
+    const courseId = document.getElementById('courseSelect').value;
+    if (!courseId) return;
+    currentCourse = allCourses.find(c => c.courseId === courseId);
+
+    const assessSel = document.getElementById('assessSelect');
+    assessSel.innerHTML = '<option value="">Loading...</option>';
+    assessSel.disabled  = true;
+
+    const res = await API.getCourseAssessments(courseId);
+    allAssessments = res.success ? (res.assessments || []) : [];
+
+    assessSel.innerHTML = '<option value="">— Select Assessment —</option>';
+    allAssessments.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value       = a.assessmentId;
+      opt.textContent = `${a.name} (${a.weight}% | Max: ${a.maxScore})`;
+      assessSel.appendChild(opt);
+    });
+    assessSel.disabled = false;
+
+    document.getElementById('marksSection').classList.add('hidden');
+    document.getElementById('marksPlaceholder').classList.remove('hidden');
+  };
+
+  // ── Load Marks ─────────────────────────────────────────────
+  window.loadMarks = async function() {
+    const courseId   = document.getElementById('courseSelect').value;
+    const assessId   = document.getElementById('assessSelect').value;
+    if (!courseId || !assessId) return;
+
+    currentAssess = allAssessments.find(a => a.assessmentId === assessId);
+    pendingChanges = {};
+
+    document.getElementById('marksSection').classList.remove('hidden');
+    document.getElementById('marksPlaceholder').classList.add('hidden');
+    document.getElementById('marksBody').innerHTML = `
+      <tr><td colspan="6" class="text-center text-muted" style="padding:24px;">
+        <div class="spinner spinner-dark" style="margin:0 auto;"></div>
+      </td></tr>`;
+
+    const res = await API.getStudentMarks(courseId);
+    allStudents = res.success ? (res.students || []) : [];
+
+    document.getElementById('marksTableTitle').textContent =
+      `${currentCourse?.courseName || ''} — ${currentAssess?.name || ''}`;
+    document.getElementById('marksInfoBar').innerHTML = `
+      <span>📚 ${currentCourse?.courseName}</span>
+      <span>⚖️ Weight: ${currentAssess?.weight}%</span>
+      <span>🔢 Max Score: ${currentAssess?.maxScore}</span>
+      <span>👥 ${allStudents.length} Students</span>
+      <button class="btn btn-outline btn-sm" onclick="openModal('bulkModal')">📥 Bulk Import</button>
+    `;
+
+    renderMarksTable(allStudents);
+  };
+
+  // ── Render Table ───────────────────────────────────────────
+  function renderMarksTable(students) {
+    document.getElementById('marksHead').innerHTML = `
+      <tr>
+        <th>#</th>
+        <th>Student ID</th>
+        <th>Name</th>
+        <th>Score / ${currentAssess?.maxScore || '—'}</th>
+        <th>Percentage</th>
+        <th>Actions</th>
+      </tr>`;
+
+    document.getElementById('marksCount').textContent =
+      `${students.length} students`;
+
+    if (!students.length) {
+      document.getElementById('marksBody').innerHTML = `
+        <tr><td colspan="6" class="text-center text-muted" style="padding:24px;">
+          No students found for this course.
+        </td></tr>`;
+      return;
+    }
+
+    document.getElementById('marksBody').innerHTML = students.map((s, i) => {
+      const mark   = s.marks?.[currentAssess?.assessmentId] ?? '';
+      const max    = Number(currentAssess?.maxScore || 0);
+      const pct    = mark !== '' && max > 0
+        ? ((Number(mark) / max) * 100).toFixed(1)
+        : null;
+      const g      = pct !== null ? Grade.getLetter(Number(pct)) : null;
+      const isDirty = pendingChanges[s.studentId] !== undefined;
+
+      return `
+        <tr class="${isDirty ? 'row-dirty' : ''}" id="row_${s.studentId}">
+          <td class="text-muted text-xs">${i + 1}</td>
+          <td class="td-id">${s.studentId}</td>
+          <td class="fw-600">${s.name || '—'}</td>
+          <td>
+            <div class="mark-input-wrap">
+              <input
+                type="number"
+                class="mark-input"
+                id="markInput_${s.studentId}"
+                value="${isDirty ? pendingChanges[s.studentId] : (mark !== '' ? mark : '')}"
+                placeholder="—"
+                min="0"
+                max="${currentAssess?.maxScore || 9999}"
+                oninput="onMarkChange('${s.studentId}', this.value)"
+              />
+              <span class="mark-max">/ ${max}</span>
+            </div>
+          </td>
+          <td>
+            ${pct !== null
+              ? `<div class="flex items-center gap-8">
+                   <span style="color:${g.color};font-weight:700;min-width:42px;">${pct}%</span>
+                   <div class="progress" style="width:60px;">
+                     <div class="progress-bar" style="width:${pct}%;background:${g.color};"></div>
+                   </div>
+                   <span class="badge" style="background:${g.bg};color:${g.color};font-size:.68rem;">${g.letter}</span>
+                 </div>`
+              : '<span class="text-muted text-xs">—</span>'}
+          </td>
+          <td>
+            <button class="btn btn-outline btn-sm"
+              onclick="openEditMark('${s.studentId}','${(s.name||'').replace(/'/g,"\\'")}','${mark}')">
+              ✏️ Edit
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ── Filter Students ────────────────────────────────────────
+  window.filterStudents = function() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    const filtered = allStudents.filter(s =>
+      s.studentId?.toLowerCase().includes(q) ||
+      (s.name || '').toLowerCase().includes(q)
+    );
+    renderMarksTable(filtered);
+  };
+
+  // ── Track Changes ──────────────────────────────────────────
+  window.onMarkChange = function(studentId, value) {
+    pendingChanges[studentId] = value;
+    const row = document.getElementById('row_' + studentId);
+    if (row) row.classList.add('row-dirty');
+    updateSaveBtn();
+  };
+
+  function updateSaveBtn() {
+    const count = Object.keys(pendingChanges).length;
+    const btn   = document.getElementById('saveAllBtn');
+    if (btn) btn.textContent = count > 0
+      ? `💾 Save ${count} Change${count > 1 ? 's' : ''}`
+      : '💾 Save All Changes';
+  }
+
+  // ── Save All ───────────────────────────────────────────────
+  window.saveAllMarks = async function() {
+    if (!Object.keys(pendingChanges).length) {
+      Toast.info('No changes to save.'); return;
+    }
+
+    const btn = document.getElementById('saveAllBtn');
+    Loader.show(btn, 'Saving...');
+
+    let saved = 0, failed = 0;
+    for (const [studentId, score] of Object.entries(pendingChanges)) {
+      const res = await API.updateMark({
+        courseId:     currentCourse.courseId,
+        assessmentId: currentAssess.assessmentId,
+        studentId,
+        score: Number(score)
+      });
+      if (res.success) {
+        saved++;
+        const row = document.getElementById('row_' + studentId);
+        if (row) row.classList.remove('row-dirty');
+      } else {
+        failed++;
+      }
+    }
+
+    Loader.hide(btn);
+    pendingChanges = {};
+    updateSaveBtn();
+
+    if (failed === 0) {
+      Toast.success(`${saved} mark${saved > 1 ? 's' : ''} saved!`);
+    } else {
+      Toast.warning(`${saved} saved, ${failed} failed.`);
+    }
+
+    await loadMarks();
+  };
+
+  // ── Edit Single Mark ───────────────────────────────────────
+  window.openEditMark = function(studentId, name, currentMark) {
+    editStudentId = studentId;
+    document.getElementById('editMarkLabel').textContent =
+      `${name} · ${studentId}`;
+    document.getElementById('editMarkInfo').innerHTML = `
+      <div class="emi-row">
+        <span>Assessment:</span><strong>${currentAssess?.name}</strong>
+      </div>
+      <div class="emi-row">
+        <span>Current Score:</span>
+        <strong>${currentMark !== '' ? currentMark : 'Not entered'}</strong>
+      </div>`;
+    document.getElementById('editMarkMax').textContent =
+      `(max: ${currentAssess?.maxScore})`;
+    document.getElementById('editMarkValue').value =
+      currentMark !== '' ? currentMark : '';
+    document.getElementById('editMarkValue').max = currentAssess?.maxScore || 9999;
+    openModal('editMarkModal');
+  };
+
+  window.doSaveSingleMark = async function() {
+    const score = Number(document.getElementById('editMarkValue').value);
+    const max   = Number(currentAssess?.maxScore || 9999);
+    if (isNaN(score) || score < 0)  { Toast.error('Enter a valid score.'); return; }
+    if (score > max)                { Toast.error(`Max score is ${max}.`); return; }
+
+    const btn = document.getElementById('saveMarkBtn');
+    Loader.show(btn, 'Saving...');
+    const res = await API.updateMark({
+      courseId:     currentCourse.courseId,
+      assessmentId: currentAssess.assessmentId,
+      studentId:    editStudentId,
+      score
+    });
+    Loader.hide(btn);
+
+    if (res.success) {
+      Toast.success('Mark saved!');
+      closeModal('editMarkModal');
+      await loadMarks();
+    } else {
+      Toast.error(res.message || 'Save failed.');
+    }
+  };
+
+  // ── Bulk Import ────────────────────────────────────────────
+  window.doBulkImport = async function() {
+    const csv = document.getElementById('bulkCsvInput').value.trim();
+    if (!csv) { Toast.error('Paste CSV data first.'); return; }
+
+    const lines = csv.split('\n').filter(l => l.trim());
+    const data  = [];
+
+    for (const line of lines) {
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length < 2) continue;
+      const [id, score] = parts;
+      if (id.toLowerCase() === 'studentid') continue; // skip header
+      if (!id || isNaN(Number(score))) continue;
+      data.push({ studentId: id, score: Number(score) });
+    }
+
+    if (!data.length) { Toast.error('No valid data found.'); return; }
+
+    const btn = document.getElementById('bulkImportBtn');
+    Loader.show(btn, `Importing ${data.length}...`);
+
+    let saved = 0, failed = 0;
+    for (const row of data) {
+      const res = await API.updateMark({
+        courseId:     currentCourse.courseId,
+        assessmentId: currentAssess.assessmentId,
+        studentId:    row.studentId,
+        score:        row.score
+      });
+      res.success ? saved++ : failed++;
+    }
+
+    Loader.hide(btn);
+    closeModal('bulkModal');
+    Toast.success(`Imported: ${saved} saved${failed ? ', ' + failed + ' failed' : ''}.`);
+    await loadMarks();
+  };
+
+  // ── Export CSV ─────────────────────────────────────────────
+  window.exportCSV = function() {
+    if (!allStudents.length) { Toast.warning('No data to export.'); return; }
+    const rows = [['StudentID', 'Name', 'Score', 'MaxScore', 'Percentage']];
+    allStudents.forEach(s => {
+      const mark = s.marks?.[currentAssess?.assessmentId] ?? '';
+      const max  = Number(currentAssess?.maxScore || 0);
+      const pct  = mark !== '' && max > 0
+        ? ((Number(mark) / max) * 100).toFixed(1) : '';
+      rows.push([s.studentId, s.name || '', mark, max, pct]);
+    });
+    const csv  = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `marks_${currentCourse?.courseCode || 'course'}_${currentAssess?.name || 'assess'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    Toast.success('CSV exported!');
+  };
+
+})();
+
+function injectMarksInstrStyles() {
+  if (document.getElementById('marks-instr-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'marks-instr-styles';
+  s.textContent = `
+    /* Marks info bar */
+    .marks-info-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 20px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-size: .82rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      font-weight: 500;
+    }
+    .marks-info-bar span { display: flex; align-items: center; gap: 4px; }
+
+    /* Mark input */
+    .mark-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mark-input {
+      width: 72px;
+      padding: 5px 8px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .88rem;
+      font-weight: 700;
+      text-align: center;
+      background: var(--bg-input);
+      color: var(--text);
+      outline: none;
+      transition: var(--trans);
+    }
+    .mark-input:focus {
+      border-color: var(--primary-light);
+      background: #fff;
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+    .mark-max { font-size: .78rem; color: var(--text-muted); font-weight: 500; }
+
+    /* Dirty row */
+    .row-dirty { background: #fefce8 !important; }
+    .row-dirty .mark-input { border-color: var(--accent); }
+
+    /* Placeholder */
+    .marks-placeholder-card {
+      background: var(--bg-card);
+      border: 2px dashed var(--border);
+      border-radius: var(--r-lg);
+      padding: 60px 24px;
+      text-align: center;
+    }
+    .mpc-icon { font-size: 3.5rem; margin-bottom: 16px; opacity: .4; }
+
+    /* Edit mark info */
+    .edit-mark-info {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 12px 14px;
+      margin-bottom: 4px;
+    }
+    .emi-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: .84rem;
+      padding: 3px 0;
+    }
+    .emi-row span { color: var(--text-muted); }
+
+    @media (max-width: 700px) {
+      .marks-info-bar { gap: 8px; font-size: .75rem; }
+      .mark-input     { width: 58px; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>
