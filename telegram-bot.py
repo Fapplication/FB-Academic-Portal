@@ -27,10 +27,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config (set as Railway environment variables) ─────────────
-BOT_TOKEN   = os.environ.get('BOT_TOKEN',   'YOUR_BOT_TOKEN')
-API_URL     = os.environ.get('API_URL',     'YOUR_APPS_SCRIPT_URL')
+BOT_TOKEN   = os.environ.get('BOT_TOKEN',   '8775466330:AAEEuQmHmynlKrn6O-FuyX5WDNFiT-5eSxA')
+API_URL     = os.environ.get('API_URL',     'https://script.google.com/macros/s/AKfycbyov_ffNcgMZYP_-fzlLfs9HiCl_XFud1vFbIMC_VmU_DHk0r6wemzzXYAN6EHhdjGZ-g/exec')
 ADMIN_ID    = int(os.environ.get('ADMIN_ID', '0'))
-PORTAL_URL  = os.environ.get('PORTAL_URL',  'https://YOUR_USERNAME.github.io/civil-eng-portal/')
+PORTAL_URL  = os.environ.get('PORTAL_URL',  'https://fapplication.github.io/FB-Academic-Portal/')
 
 # ── API Helper ────────────────────────────────────────────────
 async def api_call(action: str, params: dict = {}) -> dict:
