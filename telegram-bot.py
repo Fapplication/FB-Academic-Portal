@@ -733,10 +733,10 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ════════════════════════════════════════════════════════════
 
 def main():
-    if BOT_TOKEN == 'YOUR_BOT_TOKEN':
+    if BOT_TOKEN == '8775466330:AAEEuQmHmynlKrn6O-FuyX5WDNFiT-5eSxA':
         logger.error("❌ Set BOT_TOKEN environment variable!")
         return
-    if API_URL == 'YOUR_APPS_SCRIPT_URL':
+    if API_URL == 'https://script.google.com/macros/s/AKfycbyov_ffNcgMZYP_-fzlLfs9HiCl_XFud1vFbIMC_VmU_DHk0r6wemzzXYAN6EHhdjGZ-g/exec':
         logger.error("❌ Set API_URL environment variable!")
         return
 
