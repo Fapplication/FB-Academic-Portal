@@ -141,15 +141,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📌 *Available Commands*\n\n"
-        "/start — Main menu\n"
+        "👤 *Account*\n"
+        "/login — Log in with Student ID & password\n"
+        "/logout — Log out and unlink account\n"
+        "/reset — Reset your password\n"
+        "/link — Link account (no password needed)\n"
+        "/profile — My profile\n\n"
+        "📚 *Student*\n"
         "/marks — View your marks\n"
         "/notices — Latest notices\n"
         "/tests — Online tests\n"
         "/notes — Lecture notes\n"
-        "/complaints — My complaints\n"
-        "/profile — My profile\n"
-        "/link — Link account\n"
-        "/unlink — Unlink account\n"
+        "/complaints — My complaints\n\n"
+        "🛡 *Admin*\n"
+        "/admin — Admin panel\n\n"
         "/help — Show this message",
         parse_mode='Markdown'
     )
@@ -740,6 +745,9 @@ def main():
     # Commands
     app.add_handler(CommandHandler('start',      start))
     app.add_handler(CommandHandler('help',       help_command))
+    app.add_handler(CommandHandler('login',      login_command))
+    app.add_handler(CommandHandler('logout',     logout_command))
+    app.add_handler(CommandHandler('reset',      reset_command))
     app.add_handler(CommandHandler('marks',      show_marks))
     app.add_handler(CommandHandler('notices',    show_notices))
     app.add_handler(CommandHandler('tests',      show_tests_menu))
@@ -747,13 +755,15 @@ def main():
     app.add_handler(CommandHandler('complaints', show_complaints))
     app.add_handler(CommandHandler('profile',    show_profile))
     app.add_handler(CommandHandler('link',       start_link))
+    app.add_handler(CommandHandler('admin',      admin_command))
     app.add_handler(CommandHandler('broadcast',  admin_broadcast))
     app.add_handler(CommandHandler('adminstats', admin_stats))
 
-    # Callbacks
+    # Callbacks — admin panel first (more specific prefix), then general
+    app.add_handler(CallbackQueryHandler(handle_admin_callback, pattern='^adm_'))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    # Messages
+    # Messages — use the extended handler that wraps the original
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🤖 Bot is running...")
@@ -761,3 +771,556 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# ════════════════════════════════════════════════════════════
+# LOGIN / LOGOUT
+# ════════════════════════════════════════════════════════════
+
+async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry point: /login — starts the student login flow."""
+    chat_id = update.effective_chat.id
+    state   = get_state(chat_id)
+
+    if state.get('studentId'):
+        await update.message.reply_text(
+            f"✅ You are already logged in as `{state['studentId']}`.\n\n"
+            f"Use /logout to switch accounts.",
+            parse_mode='Markdown',
+            reply_markup=main_keyboard(True)
+        )
+        return
+
+    set_state(chat_id, 'login_awaiting_id')
+    await update.message.reply_text(
+        "🔐 *Login to Your Account*\n\n"
+        "Please send your *Student ID*:",
+        parse_mode='Markdown'
+    )
+
+async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unlinks account and clears all session data."""
+    chat_id = update.effective_chat.id
+    state   = get_state(chat_id)
+    sid     = state.get('studentId')
+
+    if not sid:
+        await update.message.reply_text(
+            "ℹ️ You are not logged in.",
+            reply_markup=main_keyboard(False)
+        )
+        return
+
+    # Tell the sheet this session is unlinked
+    await api_call('saveBotSession', {
+        'chatId':    chat_id,
+        'studentId': sid,
+        'status':    'unlinked'
+    })
+
+    # Wipe in-memory state
+    user_states[chat_id] = {'step': 'idle', 'studentId': None, 'data': {}}
+
+    await update.message.reply_text(
+        "👋 *Logged out successfully.*\n\n"
+        "Your account has been unlinked from this chat.\n"
+        "Use /login or tap *Link My Account* to log in again.",
+        parse_mode='Markdown',
+        reply_markup=main_keyboard(False)
+    )
+
+# ════════════════════════════════════════════════════════════
+# PASSWORD RESET (via bot)
+# ════════════════════════════════════════════════════════════
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the password reset flow."""
+    chat_id = update.effective_chat.id
+    set_state(chat_id, 'reset_awaiting_id')
+    await update.message.reply_text(
+        "🔑 *Reset Password*\n\n"
+        "Send your *Student ID* and we'll send an OTP:",
+        parse_mode='Markdown'
+    )
+
+# ════════════════════════════════════════════════════════════
+# EXTENDED MESSAGE HANDLER — login + reset steps
+# (patches into the existing handle_message dispatcher)
+# ════════════════════════════════════════════════════════════
+
+# Save a reference to the original handler
+_original_handle_message = handle_message
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    text    = (update.message.text or '').strip()
+    state   = get_state(chat_id)
+    step    = state.get('step', 'idle')
+
+    # ── Login flow ───────────────────────────────────────────
+    if step == 'login_awaiting_id':
+        set_state(chat_id, 'login_awaiting_password', pending_id=text)
+        await update.message.reply_text(
+            f"🔐 ID: `{text}`\n\nNow send your *password*:",
+            parse_mode='Markdown'
+        )
+        return
+
+    if step == 'login_awaiting_password':
+        pending_id = state.get('pending_id', '')
+        msg = await update.message.reply_text("⏳ Verifying credentials...")
+        res = await api_call('loginStudent', {'studentId': pending_id, 'password': text})
+        if res.get('success'):
+            await api_call('saveBotSession', {
+                'chatId':    chat_id,
+                'studentId': pending_id,
+                'status':    'linked'
+            })
+            set_state(chat_id, 'idle', studentId=pending_id, name=res.get('name', ''))
+            await msg.edit_text(
+                f"✅ *Welcome back, {res.get('name')}!*\n\n"
+                f"🆔 `{pending_id}`\n\n"
+                f"You are now logged in.",
+                parse_mode='Markdown'
+            )
+            await update.message.reply_text("Main menu:", reply_markup=main_keyboard(True))
+        else:
+            set_state(chat_id, 'idle')
+            await msg.edit_text(
+                f"❌ *{res.get('message', 'Invalid credentials.')}*\n\n"
+                "Use /login to try again.",
+                parse_mode='Markdown',
+                reply_markup=main_keyboard(False)
+            )
+        return
+
+    # ── Password reset flow ──────────────────────────────────
+    if step == 'reset_awaiting_id':
+        msg = await update.message.reply_text("⏳ Sending OTP...")
+        res = await api_call('sendOTP', {'studentId': text, 'purpose': 'RESET'})
+        if res.get('success'):
+            set_state(chat_id, 'reset_awaiting_otp', reset_id=text)
+            via = res.get('sentVia', 'unknown')
+            contact = res.get('contact', '')
+            await msg.edit_text(
+                f"📨 OTP sent via *{via}*"
+                f"{' to ' + contact if contact else ''}.\n\n"
+                f"Please enter the *6-digit OTP*:",
+                parse_mode='Markdown'
+            )
+        else:
+            set_state(chat_id, 'idle')
+            await msg.edit_text(
+                f"❌ {res.get('message', 'Failed to send OTP.')}\n\nUse /reset to try again.",
+                parse_mode='Markdown'
+            )
+        return
+
+    if step == 'reset_awaiting_otp':
+        reset_id = state.get('reset_id', '')
+        res = await api_call('verifyOTP', {'studentId': reset_id, 'otp': text})
+        if res.get('success'):
+            set_state(chat_id, 'reset_awaiting_newpw', reset_id=reset_id, last_otp=text)
+            await update.message.reply_text(
+                "✅ OTP verified!\n\nNow send your *new password*\n_(min 6 characters)_:",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ {res.get('message', 'Invalid OTP.')}\n\nSend the correct OTP or use /reset to restart.",
+                parse_mode='Markdown'
+            )
+        return
+
+    if step == 'reset_awaiting_newpw':
+        reset_id = state.get('reset_id', '')
+        if len(text) < 6:
+            await update.message.reply_text("⚠️ Password must be at least 6 characters. Try again:")
+            return
+        msg = await update.message.reply_text("⏳ Resetting password...")
+        # We already verified OTP — send a dummy OTP that matches to pass verifyOTP in resetPassword
+        # Better: store verified flag and call a direct reset. We re-use verifyOTP logic here:
+        res = await api_call('resetPassword', {
+            'studentId':   reset_id,
+            'otp':         state.get('last_otp', '000000'),  # GAS verifyOTP called again; pass stored OTP
+            'newPassword': text
+        })
+        # Note: since GAS resetPassword calls verifyOTP internally,
+        # store the OTP in state at the verify step for this to work.
+        # Fallback: send OTP again then reset. For simplicity we call
+        # a direct password update via updatePassword action if available.
+        # For now just surface the result.
+        set_state(chat_id, 'idle')
+        if res.get('success'):
+            await msg.edit_text(
+                "✅ *Password reset successfully!*\n\n"
+                "Use /login to log in with your new password.",
+                parse_mode='Markdown',
+                reply_markup=main_keyboard(False)
+            )
+        else:
+            await msg.edit_text(
+                f"❌ {res.get('message', 'Reset failed.')}\n\nUse /reset to try again.",
+                parse_mode='Markdown'
+            )
+        return
+
+    # ── Admin text flows ─────────────────────────────────────
+    if step == 'admin_adding_id':
+        await handle_admin_add_id_input(update, context, text)
+        return
+
+    if step == 'admin_sending_notice':
+        await handle_admin_notice_input(update, context, text)
+        return
+
+    if step == 'admin_resolving_complaint':
+        await handle_admin_resolve_input(update, context, text)
+        return
+
+    # ── Fall through to original handler ────────────────────
+    await _original_handle_message(update, context)
+
+
+# ════════════════════════════════════════════════════════════
+# ADMIN PANEL
+# ════════════════════════════════════════════════════════════
+
+def admin_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('📊 Dashboard',          callback_data='adm_dashboard')],
+        [InlineKeyboardButton('👥 Manage Students',    callback_data='adm_students'),
+         InlineKeyboardButton('➕ Add Student ID',     callback_data='adm_add_id')],
+        [InlineKeyboardButton('📣 Send Notice',        callback_data='adm_notice'),
+         InlineKeyboardButton('📬 Complaints',         callback_data='adm_complaints')],
+        [InlineKeyboardButton('🚫 Banned Students',    callback_data='adm_banned'),
+         InlineKeyboardButton('📈 Test Results',       callback_data='adm_test_results')],
+        [InlineKeyboardButton('✖ Close',               callback_data='adm_close')],
+    ])
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry point: /admin"""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Admin access only.")
+        return
+    await update.message.reply_text(
+        "🛡 *Admin Panel*\n\nSelect an action:",
+        parse_mode='Markdown',
+        reply_markup=admin_menu_keyboard()
+    )
+
+# ── Admin callback dispatcher ────────────────────────────────
+async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query   = update.callback_query
+    data    = query.data
+    chat_id = update.effective_chat.id
+
+    if update.effective_user.id != ADMIN_ID:
+        await query.answer("❌ Admin only.", show_alert=True)
+        return
+
+    await query.answer()
+
+    # ── Dashboard ────────────────────────────────────────────
+    if data == 'adm_dashboard':
+        await query.edit_message_text("⏳ Loading dashboard...")
+        res    = await api_call('getDashboard')
+        linked = len([s for s in user_states.values() if s.get('studentId')])
+        text   = (
+            f"📊 *Dashboard*\n\n"
+            f"👥 Authorized Students: {res.get('totalStudents','—')}\n"
+            f"📚 Total Assessments:   {res.get('totalAssessments','—')}\n"
+            f"📬 Pending Complaints:  {res.get('pendingComplaints','—')}\n"
+            f"📈 Avg Score:           {res.get('avgScore','—')}%\n"
+            f"📱 Active Bot Sessions: {linked}\n\n"
+            f"*Courses:*\n"
+        )
+        for c in res.get('courses', []):
+            text += (
+                f"• {c.get('courseName','—')} (`{c.get('courseCode','—')}`)\n"
+                f"  {c.get('assessmentCount',0)} assessments"
+                f" | avg {c.get('avgScore','—')}%\n"
+            )
+        await query.edit_message_text(text, parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('← Back', callback_data='adm_back')
+            ]]))
+        return
+
+    # ── List students ────────────────────────────────────────
+    if data == 'adm_students':
+        await query.edit_message_text("⏳ Loading students...")
+        res      = await api_call('getAuthorizedIDs')
+        ids      = res.get('ids', [])
+        banned   = get_state(chat_id).get('banned_ids', set())
+        text     = f"👥 *Authorized Students* ({len(ids)} total)\n\n"
+        for s in ids[:30]:
+            sid  = s.get('ID', s.get('id',''))
+            name = s.get('Name', s.get('name','—'))
+            flag = ' 🚫' if sid in banned else ''
+            text += f"• `{sid}` — {name}{flag}\n"
+        if len(ids) > 30:
+            text += f"\n_...and {len(ids)-30} more._"
+        buttons = [
+            [InlineKeyboardButton('➕ Add New', callback_data='adm_add_id'),
+             InlineKeyboardButton('🗑 Remove',  callback_data='adm_remove_id')],
+            [InlineKeyboardButton('← Back',    callback_data='adm_back')],
+        ]
+        await query.edit_message_text(text, parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
+    # ── Add student ID ───────────────────────────────────────
+    if data == 'adm_add_id':
+        set_state(chat_id, 'admin_adding_id')
+        await query.edit_message_text(
+            "➕ *Add Authorized Student ID*\n\n"
+            "Send the details in this format:\n"
+            "`StudentID | Full Name | Email`\n\n"
+            "Example:\n`ETS0050/14 | Abebe Bekele | abebe@example.com`\n\n"
+            "_Send /admin to cancel._",
+            parse_mode='Markdown'
+        )
+        return
+
+    # ── Remove student ID ────────────────────────────────────
+    if data == 'adm_remove_id':
+        set_state(chat_id, 'admin_removing_id')
+        await query.edit_message_text(
+            "🗑 *Remove Student ID*\n\n"
+            "Send the Student ID to remove:\n`ETS0050/14`\n\n"
+            "_Send /admin to cancel._",
+            parse_mode='Markdown'
+        )
+        return
+
+    # ── Send notice ──────────────────────────────────────────
+    if data == 'adm_notice':
+        set_state(chat_id, 'admin_sending_notice')
+        await query.edit_message_text(
+            "📣 *Send Notice*\n\n"
+            "Send the notice in this format:\n"
+            "`Title | Message | Category`\n\n"
+            "Categories: Exam, Assignment, Holiday, Result, Urgent, General\n\n"
+            "Example:\n`Exam Schedule | Mid exam starts Monday | Exam`\n\n"
+            "_Send /admin to cancel._",
+            parse_mode='Markdown'
+        )
+        return
+
+    # ── Complaints ───────────────────────────────────────────
+    if data == 'adm_complaints':
+        await query.edit_message_text("⏳ Loading complaints...")
+        res      = await api_call('getComplaints')
+        all_c    = res.get('complaints', [])
+        pending  = [c for c in all_c if (c.get('Status') or c.get('status','')) == 'Pending']
+        if not pending:
+            await query.edit_message_text("✅ No pending complaints.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('← Back', callback_data='adm_back')
+                ]]))
+            return
+        # Show first pending complaint with action buttons
+        state = get_state(chat_id)
+        state['pending_complaints'] = pending
+        state['complaint_index']    = 0
+        await show_admin_complaint(query, context, chat_id)
+        return
+
+    if data == 'adm_complaint_next':
+        state = get_state(chat_id)
+        state['complaint_index'] = state.get('complaint_index', 0) + 1
+        await show_admin_complaint(query, context, chat_id)
+        return
+
+    if data == 'adm_complaint_resolve':
+        state = get_state(chat_id)
+        idx   = state.get('complaint_index', 0)
+        c     = state.get('pending_complaints', [])[idx]
+        state['resolving_complaint'] = c
+        set_state(chat_id, 'admin_resolving_complaint')
+        await query.edit_message_text(
+            f"📬 Resolving complaint from `{c.get('StudentID','')}`\n\n"
+            f"Send your *response message* (or type `skip` to resolve without a message):",
+            parse_mode='Markdown'
+        )
+        return
+
+    if data == 'adm_complaint_reject':
+        state = get_state(chat_id)
+        idx   = state.get('complaint_index', 0)
+        c     = state.get('pending_complaints', [])[idx]
+        res   = await api_call('resolveComplaint', {
+            'studentId': c.get('StudentID',''),
+            'timestamp': c.get('Timestamp',''),
+            'status':    'Rejected',
+            'response':  'Your complaint has been reviewed and rejected.'
+        })
+        await query.edit_message_text(
+            "❌ Complaint *rejected* and student notified." if res.get('success')
+            else f"⚠️ Error: {res.get('message')}",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('← Back', callback_data='adm_back')
+            ]])
+        )
+        return
+
+    # ── Banned students list ─────────────────────────────────
+    if data == 'adm_banned':
+        state  = get_state(chat_id)
+        banned = state.get('banned_ids', set())
+        if not banned:
+            await query.edit_message_text("✅ No banned students.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('← Back', callback_data='adm_back')
+                ]]))
+            return
+        text = "🚫 *Banned Students*\n\n"
+        for sid in banned:
+            text += f"• `{sid}`\n"
+        await query.edit_message_text(text, parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('← Back', callback_data='adm_back')
+            ]]))
+        return
+
+    # ── Test results summary ─────────────────────────────────
+    if data == 'adm_test_results':
+        await query.edit_message_text("⏳ Loading test results...")
+        res     = await api_call('getTestResults')
+        results = res.get('results', [])
+        if not results:
+            await query.edit_message_text("📭 No test results yet.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('← Back', callback_data='adm_back')
+                ]]))
+            return
+        text = f"📈 *Test Results* ({len(results)} submissions)\n\n"
+        for r in results[-10:]:
+            sid    = r.get('StudentID', r.get('studentId','—'))
+            cid    = r.get('Course_ID', r.get('courseId','—'))
+            score  = r.get('Score', r.get('score','—'))
+            total  = r.get('Total', r.get('total','—'))
+            ts     = str(r.get('Timestamp', r.get('timestamp','')))[:10]
+            text  += f"• `{sid}` | {cid} | {score}/{total} | {ts}\n"
+        if len(results) > 10:
+            text += f"\n_Showing last 10 of {len(results)}_"
+        await query.edit_message_text(text, parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('← Back', callback_data='adm_back')
+            ]]))
+        return
+
+    # ── Back to admin menu ───────────────────────────────────
+    if data in ('adm_back', 'adm_close'):
+        if data == 'adm_close':
+            await query.edit_message_text("🛡 Admin panel closed.")
+        else:
+            await query.edit_message_text(
+                "🛡 *Admin Panel*\n\nSelect an action:",
+                parse_mode='Markdown',
+                reply_markup=admin_menu_keyboard()
+            )
+        return
+
+async def show_admin_complaint(query, context, chat_id: int):
+    state    = get_state(chat_id)
+    pending  = state.get('pending_complaints', [])
+    idx      = state.get('complaint_index', 0)
+
+    if idx >= len(pending):
+        await query.edit_message_text("✅ All pending complaints reviewed.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('← Back', callback_data='adm_back')
+            ]]))
+        return
+
+    c      = pending[idx]
+    sid    = c.get('StudentID', c.get('studentId','—'))
+    course = c.get('Course_ID', c.get('courseId','—'))
+    ctype  = c.get('Type', c.get('type','—'))
+    msg    = c.get('Message', c.get('message',''))
+    ts     = str(c.get('Timestamp', c.get('timestamp','')))[:10]
+
+    text = (
+        f"📬 *Complaint {idx+1}/{len(pending)}*\n\n"
+        f"👤 Student: `{sid}`\n"
+        f"📚 Course: {course}\n"
+        f"🔖 Type: {ctype}\n"
+        f"📅 Date: {ts}\n\n"
+        f"💬 _{msg}_"
+    )
+
+    buttons = [
+        [InlineKeyboardButton('✅ Resolve', callback_data='adm_complaint_resolve'),
+         InlineKeyboardButton('❌ Reject',  callback_data='adm_complaint_reject')],
+    ]
+    if idx + 1 < len(pending):
+        buttons.append([InlineKeyboardButton('⏭ Next', callback_data='adm_complaint_next')])
+    buttons.append([InlineKeyboardButton('← Back', callback_data='adm_back')])
+
+    await query.edit_message_text(text, parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(buttons))
+
+# ── Admin text-input handlers ────────────────────────────────
+
+async def handle_admin_add_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    chat_id = update.effective_chat.id
+    set_state(chat_id, 'idle')
+    parts = [p.strip() for p in text.split('|')]
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "⚠️ Wrong format. Use:\n`StudentID | Full Name | Email`",
+            parse_mode='Markdown'
+        )
+        return
+    sid   = parts[0]
+    name  = parts[1]
+    email = parts[2] if len(parts) > 2 else ''
+    msg   = await update.message.reply_text(f"⏳ Adding `{sid}`...", parse_mode='Markdown')
+    res   = await api_call('addAuthorizedID', {'studentId': sid, 'name': name, 'email': email})
+    if res.get('success'):
+        await msg.edit_text(f"✅ `{sid}` — *{name}* added successfully.", parse_mode='Markdown')
+    else:
+        await msg.edit_text(f"❌ {res.get('message','Failed.')}", parse_mode='Markdown')
+
+async def handle_admin_notice_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    chat_id = update.effective_chat.id
+    set_state(chat_id, 'idle')
+    parts    = [p.strip() for p in text.split('|')]
+    title    = parts[0] if len(parts) > 0 else 'Notice'
+    message  = parts[1] if len(parts) > 1 else text
+    category = parts[2] if len(parts) > 2 else 'General'
+    msg      = await update.message.reply_text("⏳ Sending notice...")
+    res      = await api_call('sendNotice', {'title': title, 'message': message, 'category': category})
+    if res.get('success'):
+        await msg.edit_text(
+            f"✅ *Notice sent!*\n\n"
+            f"📌 {title}\n"
+            f"🏷 Category: {category}\n"
+            f"📢 Broadcast to all linked students via Telegram.",
+            parse_mode='Markdown'
+        )
+    else:
+        await msg.edit_text(f"❌ {res.get('message','Failed.')}", parse_mode='Markdown')
+
+async def handle_admin_resolve_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    chat_id  = update.effective_chat.id
+    state    = get_state(chat_id)
+    c        = state.get('resolving_complaint', {})
+    response = '' if text.lower() == 'skip' else text
+    set_state(chat_id, 'idle')
+    msg = await update.message.reply_text("⏳ Resolving...")
+    res = await api_call('resolveComplaint', {
+        'studentId': c.get('StudentID',''),
+        'timestamp': c.get('Timestamp',''),
+        'status':    'Resolved',
+        'response':  response
+    })
+    if res.get('success'):
+        await msg.edit_text(
+            "✅ *Complaint resolved* and student notified via Telegram.",
+            parse_mode='Markdown'
+        )
+    else:
+        await msg.edit_text(f"❌ {res.get('message','Failed.')}", parse_mode='Markdown')
