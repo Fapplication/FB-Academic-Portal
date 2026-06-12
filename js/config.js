@@ -6,7 +6,7 @@
 // ══ CONFIGURATION ════════════════════════════════════════════
 const CONFIG = {
   // ⚠️ Replace with your deployed Google Apps Script Web App URL
-  API_URL: 'https://script.google.com/macros/s/AKfycbyov_ffNcgMZYP_-fzlLfs9HiCl_XFud1vFbIMC_VmU_DHk0r6wemzzXYAN6EHhdjGZ-g/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycby154AKDwrWangKhnkV3pYvOxw7HjRX_qMVY5PSu_g6rB5BAFP96dC4LXhTb_BSJM8L/exec',
 
   // Telegram Bot
   TELEGRAM_BOT: 'FBResultPortalBot',
