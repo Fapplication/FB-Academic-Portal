@@ -90,8 +90,9 @@ const API = {
     API.call('loginInstructor', { username, password }),
 
   // ── STUDENT ────────────────────────────────────────────────
-  getMarks: (studentId) =>
-    API.call('getMarks', { studentId }),
+  // MODIFIED: Added courseId parameter to fetch marks from specific tabs dynamically
+  getMarks: (studentId, courseId = '') =>
+    API.call('getMarks', { studentId, courseId }),
 
   submitComplaint: (data) =>
     API.call('submitComplaint', data),
@@ -284,9 +285,9 @@ const Toast = {
   },
 
   success: (m, d) => Toast.show(m, 'success', d),
-  error:   (m, d) => Toast.show(m, 'error',   d),
+  error:   (m, d) => Toast.show(m, 'error',    d),
   warning: (m, d) => Toast.show(m, 'warning', d),
-  info:    (m, d) => Toast.show(m, 'info',    d),
+  info:    (m, d) => Toast.show(m, 'info',     d),
 };
 
 // ══ LOADER (button loading state) ══════════════════════════════
@@ -476,4 +477,3 @@ async function copyToClipboard(text, successMsg = 'Copied!') {
     Toast.error('Copy failed. Please copy manually.');
   }
 }
-
