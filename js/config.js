@@ -6,7 +6,7 @@
 // ══ CONFIGURATION ════════════════════════════════════════════
 const CONFIG = {
   // ⚠️ Replace with your deployed Google Apps Script Web App URL
-  API_URL: 'https://script.google.com/macros/s/AKfycby154AKDwrWangKhnkV3pYvOxw7HjRX_qMVY5PSu_g6rB5BAFP96dC4LXhTb_BSJM8L/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyov_ffNcgMZYP_-fzlLfs9HiCl_XFud1vFbIMC_VmU_DHk0r6wemzzXYAN6EHhdjGZ-g/exec',
 
   // Telegram Bot
   TELEGRAM_BOT: 'FBResultPortalBot',
@@ -21,11 +21,18 @@ const API = {
 
   async call(action, params = {}) {
     try {
-      // Build a single `payload` JSON param — this is what doGet reads:
-      // e.parameter.payload → JSON.parse → { action, ...params }
-      const payloadObj = { action, ...params };
-      const payloadStr = encodeURIComponent(JSON.stringify(payloadObj));
-      const url = CONFIG.API_URL + '?payload=' + payloadStr;
+      const allParams = { action, ...params };
+
+      // Build query string — GAS works best with GET + query params
+      const qs = Object.entries(allParams)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => {
+          const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          return encodeURIComponent(k) + '=' + encodeURIComponent(val);
+        })
+        .join('&');
+
+      const url = CONFIG.API_URL + '?' + qs;
 
       const res = await fetch(url, {
         method: 'GET',
@@ -77,28 +84,23 @@ const API = {
     API.call('registerStudent', data),
 
   loginStudent: (studentId, password) =>
-    API.call('login', { id: studentId, password }),
+    API.call('loginStudent', { studentId, password }),
 
   loginInstructor: (username, password) =>
     API.call('loginInstructor', { username, password }),
 
   // ── STUDENT ────────────────────────────────────────────────
-  // Fetches marks from BOTH course tabs:
-  //   • Geometric Design of Highway and Street (CEng 3201)
-  //   • Transport Planning and Modeling (CEng 2901)
-  // AppScript handler: getStudentMarksFromAllTabs(id)
-  // Returns: { success, data: [ { subject, assessment, mid, final, total, grade }, ... ] }
   getMarks: (studentId) =>
-    API.call('getMarks', { id: studentId }),
+    API.call('getMarks', { studentId }),
 
   submitComplaint: (data) =>
     API.call('submitComplaint', data),
 
   getLectureNotes: (courseId = '') =>
-    API.call('getNotes', { courseId }),
+    API.call('getLectureNotes', { courseId }),
 
   getOnlineTests: (courseId = '') =>
-    API.call('getExam', { course: courseId }),
+    API.call('getOnlineTests', { courseId }),
 
   submitTestResult: (data) =>
     API.call('submitTestResult', data),
@@ -124,11 +126,10 @@ const API = {
     API.call('getAllStudents', { courseId }),
 
   getStudentMarks: (courseId) =>
-    API.call('getGrid', { subject: courseId, adminId: 'admin', adminPassword: 'admin123' }),
+    API.call('getStudentMarks', { courseId }),
 
   updateMark: (data) =>
-    // data should include: { id, subject, assessment, mid, final }
-    API.call('updateMark', { ...data, adminId: 'admin', adminPassword: 'admin123' }),
+    API.call('updateMark', data),
 
   addCourse: (data) =>
     API.call('addCourse', data),
@@ -149,15 +150,13 @@ const API = {
     API.call('deleteAssessment', { assessmentId }),
 
   uploadQuestion: (data) =>
-    // data: { course, question, a, b, c, d, correct, timer }
-    API.call('addQuestion', { ...data, adminId: 'admin', adminPassword: 'admin123' }),
+    API.call('uploadQuestion', data),
 
   deleteQuestion: (questionId) =>
     API.call('deleteQuestion', { questionId }),
 
   uploadLectureNote: (data) =>
-    // data: { course, title, url }
-    API.call('uploadNote', { ...data, adminId: 'admin', adminPassword: 'admin123' }),
+    API.call('uploadLectureNote', data),
 
   deleteLectureNote: (noteId) =>
     API.call('deleteLectureNote', { noteId }),
