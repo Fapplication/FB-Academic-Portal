@@ -21,18 +21,11 @@ const API = {
 
   async call(action, params = {}) {
     try {
-      const allParams = { action, ...params };
-
-      // Build query string — GAS works best with GET + query params
-      const qs = Object.entries(allParams)
-        .filter(([, v]) => v !== undefined && v !== null && v !== '')
-        .map(([k, v]) => {
-          const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-          return encodeURIComponent(k) + '=' + encodeURIComponent(val);
-        })
-        .join('&');
-
-      const url = CONFIG.API_URL + '?' + qs;
+      // Build a single `payload` JSON param — this is what doGet reads:
+      // e.parameter.payload → JSON.parse → { action, ...params }
+      const payloadObj = { action, ...params };
+      const payloadStr = encodeURIComponent(JSON.stringify(payloadObj));
+      const url = CONFIG.API_URL + '?payload=' + payloadStr;
 
       const res = await fetch(url, {
         method: 'GET',
@@ -84,24 +77,28 @@ const API = {
     API.call('registerStudent', data),
 
   loginStudent: (studentId, password) =>
-    API.call('loginStudent', { studentId, password }),
+    API.call('login', { id: studentId, password }),
 
   loginInstructor: (username, password) =>
     API.call('loginInstructor', { username, password }),
 
   // ── STUDENT ────────────────────────────────────────────────
-  // MODIFIED: Added courseId parameter to fetch marks from specific tabs dynamically
-  getMarks: (studentId, courseId = '') =>
-    API.call('getMarks', { studentId, courseId }),
+  // Fetches marks from BOTH course tabs:
+  //   • Geometric Design of Highway and Street (CEng 3201)
+  //   • Transport Planning and Modeling (CEng 2901)
+  // AppScript handler: getStudentMarksFromAllTabs(id)
+  // Returns: { success, data: [ { subject, assessment, mid, final, total, grade }, ... ] }
+  getMarks: (studentId) =>
+    API.call('getMarks', { id: studentId }),
 
   submitComplaint: (data) =>
     API.call('submitComplaint', data),
 
   getLectureNotes: (courseId = '') =>
-    API.call('getLectureNotes', { courseId }),
+    API.call('getNotes', { courseId }),
 
   getOnlineTests: (courseId = '') =>
-    API.call('getOnlineTests', { courseId }),
+    API.call('getExam', { course: courseId }),
 
   submitTestResult: (data) =>
     API.call('submitTestResult', data),
@@ -127,10 +124,11 @@ const API = {
     API.call('getAllStudents', { courseId }),
 
   getStudentMarks: (courseId) =>
-    API.call('getStudentMarks', { courseId }),
+    API.call('getGrid', { subject: courseId, adminId: 'admin', adminPassword: 'admin123' }),
 
   updateMark: (data) =>
-    API.call('updateMark', data),
+    // data should include: { id, subject, assessment, mid, final }
+    API.call('updateMark', { ...data, adminId: 'admin', adminPassword: 'admin123' }),
 
   addCourse: (data) =>
     API.call('addCourse', data),
@@ -151,13 +149,15 @@ const API = {
     API.call('deleteAssessment', { assessmentId }),
 
   uploadQuestion: (data) =>
-    API.call('uploadQuestion', data),
+    // data: { course, question, a, b, c, d, correct, timer }
+    API.call('addQuestion', { ...data, adminId: 'admin', adminPassword: 'admin123' }),
 
   deleteQuestion: (questionId) =>
     API.call('deleteQuestion', { questionId }),
 
   uploadLectureNote: (data) =>
-    API.call('uploadLectureNote', data),
+    // data: { course, title, url }
+    API.call('uploadNote', { ...data, adminId: 'admin', adminPassword: 'admin123' }),
 
   deleteLectureNote: (noteId) =>
     API.call('deleteLectureNote', { noteId }),
@@ -285,9 +285,9 @@ const Toast = {
   },
 
   success: (m, d) => Toast.show(m, 'success', d),
-  error:   (m, d) => Toast.show(m, 'error',    d),
+  error:   (m, d) => Toast.show(m, 'error',   d),
   warning: (m, d) => Toast.show(m, 'warning', d),
-  info:    (m, d) => Toast.show(m, 'info',     d),
+  info:    (m, d) => Toast.show(m, 'info',    d),
 };
 
 // ══ LOADER (button loading state) ══════════════════════════════
